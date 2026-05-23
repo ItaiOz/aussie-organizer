@@ -45,6 +45,8 @@ model ShoppingCenter {
 model Employee {
   id                  String   @id @default(cuid())
   fullName            String
+  role                String   @default("employee") // employee | region_manager
+  payout              Float    @default(0)
   centerId            String?
   center              ShoppingCenter? @relation("CenterEmployees", fields: [centerId], references: [id])
   managesCenters      ShoppingCenter[] @relation("CenterManager")

@@ -20,7 +20,7 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/centers", label: "Shopping centers", icon: Building2 },
   { href: "/employees", label: "Employees", icon: Users },
-  { href: "/sales", label: "Daily sales", icon: Receipt },
+  { href: "/sales", label: "Sales", icon: Receipt },
   { href: "/payroll", label: "Weekly payroll", icon: Wallet },
   { href: "/apartments", label: "Apartments", icon: Home },
   { href: "/inventory", label: "Inventory", icon: Package },
