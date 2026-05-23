@@ -2,8 +2,7 @@
 // Single-tenant. SQLite for local dev; swap `provider` to "postgresql" for prod.
 
 generator client {
-  provider      = "prisma-client"
-  output        = "../src/generated/prisma"
+  provider      = "prisma-client-js"
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
