@@ -9,9 +9,6 @@ export default function LoginPage() {
           <p className="text-sm text-zinc-500 mt-1">Sign in to continue</p>
         </div>
         <LoginForm />
-        <p className="text-xs text-zinc-400 text-center mt-6">
-          Demo accounts: owner/owner123 · manager1/manager123 · manager2/manager123
-        </p>
       </div>
     </div>
   );
