@@ -1,36 +1,96 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Aussie Organizer
 
-## Getting Started
+Internal business manager for a multi-location retail operation in Australia.
+Tracks shopping centers (leasing pipeline), employees, daily sales, weekly
+payroll, and employee housing apartments.
 
-First, run the development server:
+## Stack
+
+- Next.js 16 (App Router) + TypeScript
+- Tailwind CSS v4
+- Prisma 6 + Postgres
+- NextAuth v5 (credentials, JWT sessions)
+- Recharts for the dashboard
+- @dnd-kit for the leasing-pipeline kanban
+
+## Local development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env       # then fill in DATABASE_URL + AUTH_SECRET
+npm install
+npm run db:migrate         # create local DB schema
+npm run db:seed            # fake centers, employees, sales
+npm run dev                # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Sign in with:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Username   | Password    | Role    |
+|------------|-------------|---------|
+| `owner`    | `owner123`  | admin   |
+| `manager1` | `manager123`| manager |
+| `manager2` | `manager123`| manager |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+**Change these passwords before sharing the deployed URL.**
 
-## Learn More
+## Deploying to Vercel + Neon (free tier)
 
-To learn more about Next.js, take a look at the following resources:
+1. **Create a Neon Postgres** at <https://neon.tech> → copy the connection string
+2. **Create your first migration locally** against the Neon DB:
+   ```bash
+   echo 'DATABASE_URL="<your-neon-url>"' > .env.local
+   DATABASE_URL="<your-neon-url>" npx prisma migrate dev --name init
+   DATABASE_URL="<your-neon-url>" npm run db:seed
+   ```
+   Commit the generated `prisma/migrations/` folder.
+3. **Push to GitHub**:
+   ```bash
+   git add . && git commit -m "Deploy-ready" && git push
+   ```
+4. **Import on Vercel** at <https://vercel.com/new>:
+   - Add env vars:
+     - `DATABASE_URL` — your Neon URL
+     - `AUTH_SECRET` — generate with `openssl rand -base64 32`
+     - `AUTH_TRUST_HOST` — `true`
+   - Build command stays the project default (`npm run build` already runs `prisma migrate deploy && next build`)
+5. **Deploy.** Future migrations: edit schema → `npx prisma migrate dev --name <change>` locally → commit → push.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Project layout
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+auth.ts            NextAuth full config (uses Prisma, Node-only)
+auth.config.ts     NextAuth edge-safe config (used by proxy)
+prisma/
+  schema.prisma    Models
+  seed.ts          Seed data
+src/
+  app/
+    (app)/         Authenticated pages (sidebar layout)
+      dashboard/   KPI cards + sales chart
+      centers/     Kanban leasing pipeline (drag-drop, edit, delete)
+      employees/   Employees + sales rollup
+      sales/       Daily sales entry (cash + credit), weekly by-center pivot
+      payroll/     Weekly payroll — generate drafts, edit, mark paid
+      apartments/  Employee housing + assignments
+      inventory/   Stock-on-hand (global)
+      orders/      (stub)
+      suppliers/   Supplier directory
+      settings/    (stub)
+    login/         Sign-in page
+    api/auth/      NextAuth handlers
+  components/
+    ui/            shadcn-style primitives
+  lib/             prisma client, formatters
+  proxy.ts        Auth proxy (Next.js 16)
+```
 
-## Deploy on Vercel
+## Useful scripts
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run dev          # dev server (Turbopack)
+npm run build        # prisma migrate deploy + next build
+npm run db:migrate   # create/apply migrations
+npm run db:reset     # nuke DB and re-run migrations + seed (local only)
+npm run db:seed      # re-seed only
+npm run db:studio    # Prisma Studio (browser DB GUI)
+```

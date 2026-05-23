@@ -1,0 +1,209 @@
+// aussie-organizer — Prisma schema
+// Single-tenant. SQLite for local dev; swap `provider` to "postgresql" for prod.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Auth ----------
+
+model User {
+  id            String    @id @default(cuid())
+  username      String    @unique
+  name          String?
+  passwordHash  String
+  role          String    @default("manager") // admin | manager
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// ---------- Core business ----------
+
+model ShoppingCenter {
+  id            String    @id @default(cuid())
+  name          String
+  status        String    @default("need_to_contact") // need_to_contact | contacted | booked
+  region        String?
+  contactName   String?
+  bookedFrom    DateTime?
+  bookedTo      DateTime?
+  notes         String?
+  managerId     String?
+  manager       Employee? @relation("CenterManager", fields: [managerId], references: [id])
+  employees     Employee[] @relation("CenterEmployees")
+  sales         DailySale[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Employee {
+  id                  String   @id @default(cuid())
+  fullName            String
+  centerId            String?
+  center              ShoppingCenter? @relation("CenterEmployees", fields: [centerId], references: [id])
+  managesCenters      ShoppingCenter[] @relation("CenterManager")
+  status              String   @default("active") // active | inactive
+  apartmentAssignments ApartmentAssignment[]
+  sales               DailySale[]
+  payrolls            WeeklyPayroll[]
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model DailySale {
+  id                  String   @id @default(cuid())
+  employeeId          String
+  employee            Employee @relation(fields: [employeeId], references: [id])
+  centerId            String
+  center              ShoppingCenter @relation(fields: [centerId], references: [id])
+  date                DateTime
+  cashAmount          Float    @default(0)
+  creditAmount        Float    @default(0)
+  notes               String?
+  createdAt           DateTime @default(now())
+
+  @@unique([employeeId, date])
+  @@index([centerId, date])
+  @@index([date])
+}
+
+model WeeklyPayroll {
+  id                  String   @id @default(cuid())
+  employeeId          String
+  employee            Employee @relation(fields: [employeeId], references: [id])
+  weekStartDate       DateTime // Monday
+  weekEndDate         DateTime // Sunday
+  baseAmount          Float    @default(0) // manual: flat weekly salary for this week
+  salesTotal          Float    @default(0) // auto: sum of employee DailySales for week
+  commissionAmount    Float    @default(0) // manual
+  bonusAmount         Float    @default(0)
+  deductions          Float    @default(0)
+  totalAmount         Float    @default(0) // base + commission + bonus - deductions
+  status              String   @default("draft") // draft | paid
+  paidAt              DateTime?
+  paymentMethod       String?  // cash | bank_transfer | other
+  notes               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([employeeId, weekStartDate])
+  @@index([weekStartDate])
+}
+
+// ---------- Housing ----------
+
+model Apartment {
+  id            String   @id @default(cuid())
+  address       String
+  city          String?
+  bedrooms      Int      @default(1)
+  monthlyRent   Float    @default(0)
+  landlord      String?
+  landlordPhone String?
+  leaseStart    DateTime?
+  leaseEnd      DateTime?
+  status        String   @default("active") // active | inactive
+  notes         String?
+  assignments   ApartmentAssignment[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model ApartmentAssignment {
+  id            String   @id @default(cuid())
+  apartmentId   String
+  apartment     Apartment @relation(fields: [apartmentId], references: [id])
+  employeeId    String
+  employee      Employee @relation(fields: [employeeId], references: [id])
+  moveInDate    DateTime
+  moveOutDate   DateTime?
+  rentShare     Float?   // override; otherwise rent / current occupant count
+  createdAt     DateTime @default(now())
+
+  @@index([apartmentId])
+  @@index([employeeId])
+}
+
+// ---------- Inventory & Orders ----------
+
+model Supplier {
+  id            String   @id @default(cuid())
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  notes         String?
+  products      Product[]
+  orders        PurchaseOrder[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Product {
+  id            String   @id @default(cuid())
+  sku           String   @unique
+  name          String
+  category      String?
+  unitPrice     Float    @default(0)
+  costPrice     Float    @default(0)
+  supplierId    String?
+  supplier      Supplier? @relation(fields: [supplierId], references: [id])
+  stockLevels   StockLevel[]
+  orderItems    PurchaseOrderItem[]
+  stockMoves    StockMovement[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model StockLevel {
+  id              String   @id @default(cuid())
+  productId       String   @unique
+  product         Product  @relation(fields: [productId], references: [id])
+  quantity        Int      @default(0)
+  reorderThreshold Int     @default(0)
+  lastCountedAt   DateTime?
+}
+
+model StockMovement {
+  id            String   @id @default(cuid())
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id])
+  delta         Int
+  reason        String   // receive | sale | adjust | transfer
+  referenceId   String?  // PO id, sale id, etc.
+  note          String?
+  createdAt     DateTime @default(now())
+  createdBy     String?
+
+  @@index([productId])
+}
+
+model PurchaseOrder {
+  id            String   @id @default(cuid())
+  supplierId    String
+  supplier      Supplier @relation(fields: [supplierId], references: [id])
+  status        String   @default("draft") // draft | sent | received | cancelled
+  expectedAt    DateTime?
+  receivedAt    DateTime?
+  total         Float    @default(0)
+  notes         String?
+  items         PurchaseOrderItem[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model PurchaseOrderItem {
+  id            String   @id @default(cuid())
+  orderId       String
+  order         PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id])
+  quantity      Int
+  unitCost      Float    @default(0)
+}
