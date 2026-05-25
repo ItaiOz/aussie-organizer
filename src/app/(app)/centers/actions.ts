@@ -45,12 +45,9 @@ export async function updateCenter(id: string, fd: FormData) {
 export async function deleteCenter(id: string) {
   await prisma.$transaction([
     prisma.dailySale.deleteMany({ where: { centerId: id } }),
-    prisma.employee.updateMany({ where: { centerId: id }, data: { centerId: null } }),
-    prisma.shoppingCenter.update({ where: { id }, data: { managerId: null } }),
     prisma.shoppingCenter.delete({ where: { id } }),
   ]);
   revalidatePath("/centers");
-  revalidatePath("/employees");
   revalidatePath("/sales");
   revalidatePath("/dashboard");
   return { ok: true } as const;

@@ -7,16 +7,12 @@ export async function generateDrafts(weekStartStr: string) {
   const { start, end } = weekRange(new Date(weekStartStr + "T00:00:00"));
 
   const employees = await prisma.employee.findMany({ where: { status: "active" } });
-  const sales = await prisma.dailySale.findMany({
-    where: { date: { gte: start, lte: end }, employeeId: { not: null } },
-    select: { employeeId: true, type: true, cashAmount: true, creditAmount: true },
+  const salesAgg = await prisma.employeeSale.groupBy({
+    by: ["employeeId"],
+    _sum: { amount: true },
+    where: { dailySale: { date: { gte: start, lte: end } } },
   });
-  const salesByEmp: Record<string, number> = {};
-  for (const r of sales) {
-    if (!r.employeeId) continue;
-    const sign = r.type === "refund" ? -1 : 1;
-    salesByEmp[r.employeeId] = (salesByEmp[r.employeeId] ?? 0) + (r.cashAmount + r.creditAmount) * sign;
-  }
+  const salesByEmp = Object.fromEntries(salesAgg.map((r) => [r.employeeId, r._sum.amount ?? 0]));
 
   let created = 0;
   for (const e of employees) {
@@ -54,14 +50,11 @@ export async function upsertPayroll(args: {
 }) {
   const { start, end } = weekRange(new Date(args.weekStart + "T00:00:00"));
   const total = args.baseAmount + args.commissionAmount + args.bonusAmount - args.deductions;
-  const empSales = await prisma.dailySale.findMany({
-    where: { employeeId: args.employeeId, date: { gte: start, lte: end } },
-    select: { type: true, cashAmount: true, creditAmount: true },
+  const empSalesAgg = await prisma.employeeSale.aggregate({
+    _sum: { amount: true },
+    where: { employeeId: args.employeeId, dailySale: { date: { gte: start, lte: end } } },
   });
-  const salesTotalForWeek = empSales.reduce((acc, r) => {
-    const sign = r.type === "refund" ? -1 : 1;
-    return acc + (r.cashAmount + r.creditAmount) * sign;
-  }, 0);
+  const salesTotalForWeek = empSalesAgg._sum.amount ?? 0;
   await prisma.weeklyPayroll.upsert({
     where: { employeeId_weekStartDate: { employeeId: args.employeeId, weekStartDate: start } },
     create: {

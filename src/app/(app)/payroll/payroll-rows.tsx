@@ -10,7 +10,7 @@ import { upsertPayroll, markPaid } from "./actions";
 type Row = {
   employeeId: string;
   fullName: string;
-  centerName: string;
+  role: string;
   salesTotal: number;
   payroll: {
     id: string;
@@ -56,7 +56,7 @@ function PayrollRow({ row, weekStart }: { row: Row; weekStart: string }) {
     return (
       <TableRow>
         <TableCell className="font-medium">{row.fullName}</TableCell>
-        <TableCell className="text-zinc-600">{row.centerName}</TableCell>
+        <TableCell className="text-zinc-600">{row.role === "region_manager" ? "Region manager" : "Employee"}</TableCell>
         <TableCell className="text-right">{money(row.salesTotal)}</TableCell>
         <TableCell className="text-right">{p ? money(p.baseAmount) : "—"}</TableCell>
         <TableCell className="text-right">{p ? money(p.commissionAmount) : "—"}</TableCell>
@@ -106,7 +106,7 @@ function PayrollRow({ row, weekStart }: { row: Row; weekStart: string }) {
   return (
     <TableRow>
       <TableCell className="font-medium">{row.fullName}</TableCell>
-      <TableCell className="text-zinc-600">{row.centerName}</TableCell>
+      <TableCell className="text-zinc-600">{row.role === "region_manager" ? "Region manager" : "Employee"}</TableCell>
       <TableCell className="text-right">{money(row.salesTotal)}</TableCell>
       <TableCell>
         <Input type="number" step="0.01" min="0" value={base} onChange={(e) => setBase(Number(e.target.value))} className="text-right" />

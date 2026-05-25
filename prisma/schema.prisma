@@ -34,9 +34,6 @@ model ShoppingCenter {
   bookedFrom    DateTime?
   bookedTo      DateTime?
   notes         String?
-  managerId     String?
-  manager       Employee? @relation("CenterManager", fields: [managerId], references: [id])
-  employees     Employee[] @relation("CenterEmployees")
   sales         DailySale[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -47,12 +44,9 @@ model Employee {
   fullName            String
   role                String   @default("employee") // employee | region_manager
   payout              Float    @default(0)
-  centerId            String?
-  center              ShoppingCenter? @relation("CenterEmployees", fields: [centerId], references: [id])
-  managesCenters      ShoppingCenter[] @relation("CenterManager")
   status              String   @default("active") // active | inactive
   apartmentAssignments ApartmentAssignment[]
-  sales               DailySale[]
+  employeeSales       EmployeeSale[]
   payrolls            WeeklyPayroll[]
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
@@ -60,20 +54,31 @@ model Employee {
 
 model DailySale {
   id                  String   @id @default(cuid())
-  type                String   @default("sale") // sale | refund
-  employeeId          String?
-  employee            Employee? @relation(fields: [employeeId], references: [id])
   centerId            String
   center              ShoppingCenter @relation(fields: [centerId], references: [id])
   date                DateTime
   cashAmount          Float    @default(0)
-  creditAmount        Float    @default(0)
+  cardAmount          Float    @default(0)
+  refundAmount        Float    @default(0)
   notes               String?
+  employeeSales       EmployeeSale[]
   createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  @@index([centerId, date])
-  @@index([employeeId, date])
+  @@unique([centerId, date])
   @@index([date])
+}
+
+model EmployeeSale {
+  id            String    @id @default(cuid())
+  dailySaleId   String
+  dailySale     DailySale @relation(fields: [dailySaleId], references: [id], onDelete: Cascade)
+  employeeId    String
+  employee      Employee  @relation(fields: [employeeId], references: [id])
+  amount        Float     @default(0)
+
+  @@index([employeeId])
+  @@index([dailySaleId])
 }
 
 model WeeklyPayroll {

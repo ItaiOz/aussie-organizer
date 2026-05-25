@@ -17,9 +17,9 @@ import {
 } from "@/components/ui/dialog";
 import { createEmployee } from "./actions";
 
-export function EmployeeFormDialog({ centers }: { centers: { id: string; name: string }[] }) {
+export function EmployeeFormDialog() {
   const [open, setOpen] = useState(false);
-  const [centerId, setCenterId] = useState<string>("");
+  const [role, setRole] = useState("employee");
   const [pending, startTransition] = useTransition();
 
   return (
@@ -36,12 +36,12 @@ export function EmployeeFormDialog({ centers }: { centers: { id: string; name: s
         <form
           action={(fd) =>
             startTransition(async () => {
-              if (centerId) fd.set("centerId", centerId);
+              fd.set("role", role);
               const res = await createEmployee(fd);
               if (res.ok) {
                 toast.success("Employee added");
                 setOpen(false);
-                setCenterId("");
+                setRole("employee");
               } else {
                 toast.error(res.error ?? "Failed");
               }
@@ -53,20 +53,23 @@ export function EmployeeFormDialog({ centers }: { centers: { id: string; name: s
             <Label htmlFor="fullName">Full name</Label>
             <Input id="fullName" name="fullName" required autoFocus />
           </div>
-          <div className="space-y-2">
-            <Label>Center</Label>
-            <Select value={centerId} onValueChange={setCenterId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select center" />
-              </SelectTrigger>
-              <SelectContent>
-                {centers.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Role</Label>
+              <Select value={role} onValueChange={setRole}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="employee">Employee</SelectItem>
+                  <SelectItem value="region_manager">Region manager</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="payout">Payout (AUD)</Label>
+              <Input id="payout" name="payout" type="number" min="0" step="0.01" placeholder="0.00" />
+            </div>
           </div>
           <DialogFooter>
             <DialogClose asChild>

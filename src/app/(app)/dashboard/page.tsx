@@ -18,15 +18,15 @@ export default async function DashboardPage() {
   const [todaySales, weekSales, allSales30, centers, activeEmployees, openOrders, lowStock] = await Promise.all([
     prisma.dailySale.findMany({
       where: { date: { gte: todayStart, lte: todayEnd } },
-      select: { type: true, cashAmount: true, creditAmount: true },
+      select: { cashAmount: true, cardAmount: true, refundAmount: true },
     }),
     prisma.dailySale.findMany({
       where: { date: { gte: weekStart, lte: weekEnd } },
-      select: { type: true, cashAmount: true, creditAmount: true },
+      select: { cashAmount: true, cardAmount: true, refundAmount: true },
     }),
     prisma.dailySale.findMany({
       where: { date: { gte: last30 } },
-      select: { date: true, type: true, cashAmount: true, creditAmount: true, centerId: true },
+      select: { date: true, cashAmount: true, cardAmount: true, refundAmount: true, centerId: true },
       orderBy: { date: "asc" },
     }),
     prisma.shoppingCenter.findMany({ where: { status: "booked" } }),
@@ -38,28 +38,28 @@ export default async function DashboardPage() {
     }),
   ]);
 
-  const sumNet = (rows: { type: string; cashAmount: number; creditAmount: number }[]) =>
-    rows.reduce((acc, r) => {
-      const sign = r.type === "refund" ? -1 : 1;
-      return {
-        cash: acc.cash + r.cashAmount * sign,
-        credit: acc.credit + r.creditAmount * sign,
-      };
-    }, { cash: 0, credit: 0 });
+  const sumNet = (rows: { cashAmount: number; cardAmount: number; refundAmount: number }[]) =>
+    rows.reduce(
+      (acc, r) => ({
+        cash: acc.cash + r.cashAmount,
+        card: acc.card + r.cardAmount,
+        refund: acc.refund + r.refundAmount,
+      }),
+      { cash: 0, card: 0, refund: 0 }
+    );
 
   const todayNet = sumNet(todaySales);
   const weekNet = sumNet(weekSales);
-  const todayTotal = todayNet.cash + todayNet.credit;
-  const weekTotal = weekNet.cash + weekNet.credit;
+  const todayTotal = todayNet.cash + todayNet.card - todayNet.refund;
+  const weekTotal = weekNet.cash + weekNet.card - weekNet.refund;
   const weekCash = weekNet.cash;
-  const weekCredit = weekNet.credit;
+  const weekCredit = weekNet.card;
 
   const salesByCenterMap = new Map<string, number>();
   for (const s of allSales30) {
     if (s.date < weekStart || s.date > weekEnd) continue;
-    const sign = s.type === "refund" ? -1 : 1;
     const cur = salesByCenterMap.get(s.centerId) ?? 0;
-    salesByCenterMap.set(s.centerId, cur + (s.cashAmount + s.creditAmount) * sign);
+    salesByCenterMap.set(s.centerId, cur + s.cashAmount + s.cardAmount - s.refundAmount);
   }
   const salesByCenter = Array.from(salesByCenterMap.entries()).map(([centerId, total]) => ({ centerId, total }));
   const centerNameById = Object.fromEntries(centers.map((c) => [c.id, c.name]));
@@ -67,8 +67,7 @@ export default async function DashboardPage() {
   const dailyTotals = new Map<string, number>();
   for (const s of allSales30) {
     const key = s.date.toISOString().slice(0, 10);
-    const sign = s.type === "refund" ? -1 : 1;
-    dailyTotals.set(key, (dailyTotals.get(key) ?? 0) + (s.cashAmount + s.creditAmount) * sign);
+    dailyTotals.set(key, (dailyTotals.get(key) ?? 0) + s.cashAmount + s.cardAmount - s.refundAmount);
   }
   const chartData = Array.from(dailyTotals.entries())
     .map(([date, total]) => ({ date, total }))

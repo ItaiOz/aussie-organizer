@@ -8,33 +8,26 @@ import { EmployeeFormDialog } from "./employee-form-dialog";
 
 export const dynamic = "force-dynamic";
 
+const ROLE_LABEL: Record<string, string> = {
+  employee: "Employee",
+  region_manager: "Region manager",
+};
+
 export default async function EmployeesPage() {
   const since = subDays(new Date(), 30);
-  const [employees, centers, salesAgg] = await Promise.all([
-    prisma.employee.findMany({
-      orderBy: { fullName: "asc" },
-      include: { center: true },
-    }),
-    prisma.shoppingCenter.findMany({ orderBy: { name: "asc" } }),
-    prisma.dailySale.findMany({
-      where: { date: { gte: since }, employeeId: { not: null } },
-      select: { employeeId: true, type: true, cashAmount: true, creditAmount: true },
+  const [employees, salesAgg] = await Promise.all([
+    prisma.employee.findMany({ orderBy: { fullName: "asc" } }),
+    prisma.employeeSale.groupBy({
+      by: ["employeeId"],
+      _sum: { amount: true },
+      where: { dailySale: { date: { gte: since } } },
     }),
   ]);
-  const salesByEmp: Record<string, number> = {};
-  for (const r of salesAgg) {
-    if (!r.employeeId) continue;
-    const sign = r.type === "refund" ? -1 : 1;
-    salesByEmp[r.employeeId] = (salesByEmp[r.employeeId] ?? 0) + (r.cashAmount + r.creditAmount) * sign;
-  }
+  const salesByEmp = Object.fromEntries(salesAgg.map((r) => [r.employeeId, r._sum.amount ?? 0]));
 
   return (
     <>
-      <PageHeader
-        title="Employees"
-        description="The people working in your centers"
-        action={<EmployeeFormDialog centers={centers.map((c) => ({ id: c.id, name: c.name }))} />}
-      />
+      <PageHeader title="Employees" description="People in your business" action={<EmployeeFormDialog />} />
       <PageBody>
         <Card>
           <CardContent className="p-0">
@@ -42,15 +35,16 @@ export default async function EmployeesPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Center</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead className="text-right">Payout</TableHead>
                   <TableHead className="text-right">Sales (last 30d)</TableHead>
+                  <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {employees.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-zinc-500 py-12">
+                    <TableCell colSpan={5} className="text-center text-zinc-500 py-12">
                       No employees yet.
                     </TableCell>
                   </TableRow>
@@ -58,7 +52,9 @@ export default async function EmployeesPage() {
                 {employees.map((e) => (
                   <TableRow key={e.id}>
                     <TableCell className="font-medium">{e.fullName}</TableCell>
-                    <TableCell className="text-zinc-600">{e.center?.name ?? "—"}</TableCell>
+                    <TableCell className="text-zinc-600">{ROLE_LABEL[e.role] ?? e.role}</TableCell>
+                    <TableCell className="text-right">{e.payout > 0 ? money(e.payout) : <span className="text-zinc-300">—</span>}</TableCell>
+                    <TableCell className="text-right font-medium">{money(salesByEmp[e.id] ?? 0)}</TableCell>
                     <TableCell>
                       <span
                         className={
@@ -70,7 +66,6 @@ export default async function EmployeesPage() {
                         {e.status}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right font-medium">{money(salesByEmp[e.id] ?? 0)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
