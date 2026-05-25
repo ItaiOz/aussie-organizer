@@ -4,12 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { money, fmtDate } from "@/lib/format";
-import { startOfWeek, endOfWeek, subWeeks, format } from "date-fns";
+import { startOfWeek, endOfWeek, subWeeks, subDays, startOfDay, format } from "date-fns";
 import { SaleFormDialog } from "./sale-form-dialog";
+import { DailyChart } from "./daily-chart";
 
 export const dynamic = "force-dynamic";
 
 const WEEKS_BACK = 6;
+const DAYS_BACK = 30;
 
 export default async function SalesPage() {
   const now = new Date();
@@ -21,7 +23,9 @@ export default async function SalesPage() {
     weeks.push({ start, end, key: format(start, "yyyy-MM-dd"), label: `${format(start, "d MMM")} – ${format(end, "d MMM")}` });
   }
 
-  const oldestStart = weeks[weeks.length - 1].start;
+  const oldestWeekStart = weeks[weeks.length - 1].start;
+  const oldestDay = startOfDay(subDays(now, DAYS_BACK - 1));
+  const oldestStart = oldestDay < oldestWeekStart ? oldestDay : oldestWeekStart;
 
   const [sales, employees, centers, weeklySales] = await Promise.all([
     prisma.dailySale.findMany({
@@ -72,6 +76,30 @@ export default async function SalesPage() {
     }
   }
 
+  // Daily aggregation (last DAYS_BACK days)
+  type DailyCell = { date: string; label: string; cash: number; credit: number; refunds: number; net: number };
+  const dailyMap = new Map<string, DailyCell>();
+  for (let i = DAYS_BACK - 1; i >= 0; i--) {
+    const d = startOfDay(subDays(now, i));
+    const key = format(d, "yyyy-MM-dd");
+    dailyMap.set(key, { date: key, label: format(d, "EEE, d MMM"), cash: 0, credit: 0, refunds: 0, net: 0 });
+  }
+  for (const s of weeklySales) {
+    if (s.date < oldestDay) continue;
+    const key = s.date.toISOString().slice(0, 10);
+    const cell = dailyMap.get(key);
+    if (!cell) continue;
+    if (s.type === "refund") {
+      cell.refunds += s.cashAmount + s.creditAmount;
+      cell.net -= s.cashAmount + s.creditAmount;
+    } else {
+      cell.cash += s.cashAmount;
+      cell.credit += s.creditAmount;
+      cell.net += s.cashAmount + s.creditAmount;
+    }
+  }
+  const dailyRows = Array.from(dailyMap.values()).reverse(); // newest first
+
   return (
     <>
       <PageHeader
@@ -93,6 +121,7 @@ export default async function SalesPage() {
           <TabsList>
             <TabsTrigger value="by-center">By center</TabsTrigger>
             <TabsTrigger value="by-employee">By employee</TabsTrigger>
+            <TabsTrigger value="daily">Daily</TabsTrigger>
           </TabsList>
 
           <TabsContent value="by-center">
@@ -129,6 +158,45 @@ export default async function SalesPage() {
                   emptyLabel="No active employees yet."
                   rowHeader="Employee"
                 />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="daily">
+            <Card className="mb-4">
+              <CardHeader>
+                <CardTitle>Net sales — last {DAYS_BACK} days</CardTitle>
+              </CardHeader>
+              <CardContent className="h-56">
+                <DailyChart data={[...dailyRows].reverse()} />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-0 overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead className="text-right">Cash</TableHead>
+                      <TableHead className="text-right">Credit</TableHead>
+                      <TableHead className="text-right">Refunds</TableHead>
+                      <TableHead className="text-right">Net</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {dailyRows.map((d) => (
+                      <TableRow key={d.date}>
+                        <TableCell className="font-medium">{d.label}</TableCell>
+                        <TableCell className="text-right">{d.cash === 0 ? <span className="text-zinc-300">—</span> : money(d.cash)}</TableCell>
+                        <TableCell className="text-right">{d.credit === 0 ? <span className="text-zinc-300">—</span> : money(d.credit)}</TableCell>
+                        <TableCell className="text-right text-red-600">{d.refunds === 0 ? <span className="text-zinc-300">—</span> : `−${money(d.refunds)}`}</TableCell>
+                        <TableCell className={"text-right font-semibold " + (d.net < 0 ? "text-red-600" : d.net === 0 ? "text-zinc-300" : "")}>
+                          {d.net === 0 ? "—" : money(d.net)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
           </TabsContent>
