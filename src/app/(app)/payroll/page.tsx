@@ -28,17 +28,19 @@ export default async function PayrollPage(props: { searchParams: Promise<Search>
       where: { weekStartDate: start },
       include: { employee: true },
     }),
-    prisma.dailySale.groupBy({
-      by: ["employeeId"],
-      _sum: { cashAmount: true, creditAmount: true },
-      where: { date: { gte: start, lte: end } },
+    prisma.dailySale.findMany({
+      where: { date: { gte: start, lte: end }, employeeId: { not: null } },
+      select: { employeeId: true, type: true, cashAmount: true, creditAmount: true },
     }),
   ]);
 
   const payrollByEmp = Object.fromEntries(payrolls.map((p) => [p.employeeId, p]));
-  const salesByEmp = Object.fromEntries(
-    salesAgg.map((r) => [r.employeeId, (r._sum.cashAmount ?? 0) + (r._sum.creditAmount ?? 0)])
-  );
+  const salesByEmp: Record<string, number> = {};
+  for (const r of salesAgg) {
+    if (!r.employeeId) continue;
+    const sign = r.type === "refund" ? -1 : 1;
+    salesByEmp[r.employeeId] = (salesByEmp[r.employeeId] ?? 0) + (r.cashAmount + r.creditAmount) * sign;
+  }
 
   const rows = employees.map((e) => ({
     employeeId: e.id,

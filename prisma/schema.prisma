@@ -60,8 +60,9 @@ model Employee {
 
 model DailySale {
   id                  String   @id @default(cuid())
-  employeeId          String
-  employee            Employee @relation(fields: [employeeId], references: [id])
+  type                String   @default("sale") // sale | refund
+  employeeId          String?
+  employee            Employee? @relation(fields: [employeeId], references: [id])
   centerId            String
   center              ShoppingCenter @relation(fields: [centerId], references: [id])
   date                DateTime
@@ -70,8 +71,8 @@ model DailySale {
   notes               String?
   createdAt           DateTime @default(now())
 
-  @@unique([employeeId, date])
   @@index([centerId, date])
+  @@index([employeeId, date])
   @@index([date])
 }
 

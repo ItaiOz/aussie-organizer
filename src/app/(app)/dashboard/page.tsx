@@ -16,17 +16,17 @@ export default async function DashboardPage() {
   const last30 = subDays(now, 30);
 
   const [todaySales, weekSales, allSales30, centers, activeEmployees, openOrders, lowStock] = await Promise.all([
-    prisma.dailySale.aggregate({
-      _sum: { cashAmount: true, creditAmount: true },
+    prisma.dailySale.findMany({
       where: { date: { gte: todayStart, lte: todayEnd } },
+      select: { type: true, cashAmount: true, creditAmount: true },
     }),
-    prisma.dailySale.aggregate({
-      _sum: { cashAmount: true, creditAmount: true },
+    prisma.dailySale.findMany({
       where: { date: { gte: weekStart, lte: weekEnd } },
+      select: { type: true, cashAmount: true, creditAmount: true },
     }),
     prisma.dailySale.findMany({
       where: { date: { gte: last30 } },
-      select: { date: true, cashAmount: true, creditAmount: true, centerId: true },
+      select: { date: true, type: true, cashAmount: true, creditAmount: true, centerId: true },
       orderBy: { date: "asc" },
     }),
     prisma.shoppingCenter.findMany({ where: { status: "booked" } }),
@@ -38,22 +38,37 @@ export default async function DashboardPage() {
     }),
   ]);
 
-  const todayTotal = (todaySales._sum.cashAmount ?? 0) + (todaySales._sum.creditAmount ?? 0);
-  const weekTotal = (weekSales._sum.cashAmount ?? 0) + (weekSales._sum.creditAmount ?? 0);
-  const weekCash = weekSales._sum.cashAmount ?? 0;
-  const weekCredit = weekSales._sum.creditAmount ?? 0;
+  const sumNet = (rows: { type: string; cashAmount: number; creditAmount: number }[]) =>
+    rows.reduce((acc, r) => {
+      const sign = r.type === "refund" ? -1 : 1;
+      return {
+        cash: acc.cash + r.cashAmount * sign,
+        credit: acc.credit + r.creditAmount * sign,
+      };
+    }, { cash: 0, credit: 0 });
 
-  const salesByCenter = await prisma.dailySale.groupBy({
-    by: ["centerId"],
-    _sum: { cashAmount: true, creditAmount: true },
-    where: { date: { gte: weekStart, lte: weekEnd } },
-  });
+  const todayNet = sumNet(todaySales);
+  const weekNet = sumNet(weekSales);
+  const todayTotal = todayNet.cash + todayNet.credit;
+  const weekTotal = weekNet.cash + weekNet.credit;
+  const weekCash = weekNet.cash;
+  const weekCredit = weekNet.credit;
+
+  const salesByCenterMap = new Map<string, number>();
+  for (const s of allSales30) {
+    if (s.date < weekStart || s.date > weekEnd) continue;
+    const sign = s.type === "refund" ? -1 : 1;
+    const cur = salesByCenterMap.get(s.centerId) ?? 0;
+    salesByCenterMap.set(s.centerId, cur + (s.cashAmount + s.creditAmount) * sign);
+  }
+  const salesByCenter = Array.from(salesByCenterMap.entries()).map(([centerId, total]) => ({ centerId, total }));
   const centerNameById = Object.fromEntries(centers.map((c) => [c.id, c.name]));
 
   const dailyTotals = new Map<string, number>();
   for (const s of allSales30) {
     const key = s.date.toISOString().slice(0, 10);
-    dailyTotals.set(key, (dailyTotals.get(key) ?? 0) + s.cashAmount + s.creditAmount);
+    const sign = s.type === "refund" ? -1 : 1;
+    dailyTotals.set(key, (dailyTotals.get(key) ?? 0) + (s.cashAmount + s.creditAmount) * sign);
   }
   const chartData = Array.from(dailyTotals.entries())
     .map(([date, total]) => ({ date, total }))
@@ -91,15 +106,11 @@ export default async function DashboardPage() {
               <ul className="space-y-3">
                 {salesByCenter.length === 0 && <li className="text-sm text-zinc-500">No sales recorded this week.</li>}
                 {salesByCenter
-                  .map((row) => ({
-                    centerId: row.centerId,
-                    total: (row._sum.cashAmount ?? 0) + (row._sum.creditAmount ?? 0),
-                  }))
                   .sort((a, b) => b.total - a.total)
                   .map((row) => (
                     <li key={row.centerId} className="flex items-center justify-between text-sm">
                       <span className="text-zinc-700">{centerNameById[row.centerId] ?? "—"}</span>
-                      <span className="font-medium">{money(row.total)}</span>
+                      <span className={"font-medium " + (row.total < 0 ? "text-red-600" : "")}>{money(row.total)}</span>
                     </li>
                   ))}
               </ul>

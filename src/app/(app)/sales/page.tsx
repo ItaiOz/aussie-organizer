@@ -40,7 +40,7 @@ export default async function SalesPage() {
     }),
     prisma.dailySale.findMany({
       where: { date: { gte: oldestStart } },
-      select: { date: true, centerId: true, employeeId: true, cashAmount: true, creditAmount: true },
+      select: { date: true, type: true, centerId: true, employeeId: true, cashAmount: true, creditAmount: true },
     }),
   ]);
 
@@ -55,17 +55,20 @@ export default async function SalesPage() {
   for (const s of weeklySales) {
     const w = weeks.find((w) => s.date >= w.start && s.date <= w.end);
     if (!w) continue;
+    const sign = s.type === "refund" ? -1 : 1;
     const c = byCenter[s.centerId]?.[w.key];
     if (c) {
-      c.cash += s.cashAmount;
-      c.credit += s.creditAmount;
+      c.cash += s.cashAmount * sign;
+      c.credit += s.creditAmount * sign;
       c.total = c.cash + c.credit;
     }
-    const e = byEmployee[s.employeeId]?.[w.key];
-    if (e) {
-      e.cash += s.cashAmount;
-      e.credit += s.creditAmount;
-      e.total = e.cash + e.credit;
+    if (s.employeeId) {
+      const e = byEmployee[s.employeeId]?.[w.key];
+      if (e) {
+        e.cash += s.cashAmount * sign;
+        e.credit += s.creditAmount * sign;
+        e.total = e.cash + e.credit;
+      }
     }
   }
 
@@ -76,11 +79,11 @@ export default async function SalesPage() {
         description="Weekly breakdown by center and by employee"
         action={
           <SaleFormDialog
+            centers={centers.map((c) => ({ id: c.id, name: c.name }))}
             employees={employees.map((e) => ({
               id: e.id,
               fullName: e.fullName,
               centerId: e.centerId,
-              centerName: e.center?.name ?? null,
             }))}
           />
         }
@@ -140,8 +143,9 @@ export default async function SalesPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
-                  <TableHead>Employee</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead>Center</TableHead>
+                  <TableHead>Salesperson</TableHead>
                   <TableHead className="text-right">Cash</TableHead>
                   <TableHead className="text-right">Credit</TableHead>
                   <TableHead className="text-right">Total</TableHead>
@@ -151,22 +155,39 @@ export default async function SalesPage() {
               <TableBody>
                 {sales.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-zinc-500 py-12">
+                    <TableCell colSpan={8} className="text-center text-zinc-500 py-12">
                       No sales recorded yet.
                     </TableCell>
                   </TableRow>
                 )}
-                {sales.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell className="text-zinc-600">{fmtDate(s.date)}</TableCell>
-                    <TableCell className="font-medium">{s.employee.fullName}</TableCell>
-                    <TableCell className="text-zinc-600">{s.center.name}</TableCell>
-                    <TableCell className="text-right">{money(s.cashAmount)}</TableCell>
-                    <TableCell className="text-right">{money(s.creditAmount)}</TableCell>
-                    <TableCell className="text-right font-semibold">{money(s.cashAmount + s.creditAmount)}</TableCell>
-                    <TableCell className="text-zinc-500 text-sm">{s.notes ?? "—"}</TableCell>
-                  </TableRow>
-                ))}
+                {sales.map((s) => {
+                  const isRefund = s.type === "refund";
+                  const sign = isRefund ? -1 : 1;
+                  return (
+                    <TableRow key={s.id}>
+                      <TableCell className="text-zinc-600">{fmtDate(s.date)}</TableCell>
+                      <TableCell>
+                        {isRefund ? (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">Refund</span>
+                        ) : (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Sale</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-medium">{s.center.name}</TableCell>
+                      <TableCell className="text-zinc-600">{s.employee?.fullName ?? "—"}</TableCell>
+                      <TableCell className={"text-right " + (isRefund ? "text-red-600" : "")}>
+                        {money(s.cashAmount * sign)}
+                      </TableCell>
+                      <TableCell className={"text-right " + (isRefund ? "text-red-600" : "")}>
+                        {money(s.creditAmount * sign)}
+                      </TableCell>
+                      <TableCell className={"text-right font-semibold " + (isRefund ? "text-red-600" : "")}>
+                        {money((s.cashAmount + s.creditAmount) * sign)}
+                      </TableCell>
+                      <TableCell className="text-zinc-500 text-sm">{s.notes ?? "—"}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
@@ -229,7 +250,7 @@ function PivotTable({
                       <span className="text-zinc-300">—</span>
                     ) : (
                       <div>
-                        <div className="font-medium">{money(cell.total)}</div>
+                        <div className={"font-medium " + (cell.total < 0 ? "text-red-600" : "")}>{money(cell.total)}</div>
                         <div className="text-xs text-zinc-400">
                           C {money(cell.cash)} · Cr {money(cell.credit)}
                         </div>
@@ -238,7 +259,9 @@ function PivotTable({
                   </TableCell>
                 );
               })}
-              <TableCell className="text-right font-semibold">{money(rowTotal)}</TableCell>
+              <TableCell className={"text-right font-semibold " + (rowTotal < 0 ? "text-red-600" : "")}>
+                {money(rowTotal)}
+              </TableCell>
             </TableRow>
           );
         })}

@@ -16,15 +16,17 @@ export default async function EmployeesPage() {
       include: { center: true },
     }),
     prisma.shoppingCenter.findMany({ orderBy: { name: "asc" } }),
-    prisma.dailySale.groupBy({
-      by: ["employeeId"],
-      _sum: { cashAmount: true, creditAmount: true },
-      where: { date: { gte: since } },
+    prisma.dailySale.findMany({
+      where: { date: { gte: since }, employeeId: { not: null } },
+      select: { employeeId: true, type: true, cashAmount: true, creditAmount: true },
     }),
   ]);
-  const salesByEmp = Object.fromEntries(
-    salesAgg.map((r) => [r.employeeId, (r._sum.cashAmount ?? 0) + (r._sum.creditAmount ?? 0)])
-  );
+  const salesByEmp: Record<string, number> = {};
+  for (const r of salesAgg) {
+    if (!r.employeeId) continue;
+    const sign = r.type === "refund" ? -1 : 1;
+    salesByEmp[r.employeeId] = (salesByEmp[r.employeeId] ?? 0) + (r.cashAmount + r.creditAmount) * sign;
+  }
 
   return (
     <>
