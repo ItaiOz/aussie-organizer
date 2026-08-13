@@ -8,7 +8,7 @@ export function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between border-b border-zinc-200 bg-white px-8 py-5">
+    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-200 bg-white px-4 py-4 md:px-8 md:py-5">
       <div>
         <h1 className="text-xl font-semibold text-zinc-900">{title}</h1>
         {description && <p className="text-sm text-zinc-500 mt-0.5">{description}</p>}
@@ -19,5 +19,5 @@ export function PageHeader({
 }
 
 export function PageBody({ children }: { children: React.ReactNode }) {
-  return <div className="p-8">{children}</div>;
+  return <div className="p-4 md:p-8">{children}</div>;
 }

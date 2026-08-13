@@ -181,6 +181,7 @@ export function KanbanBoard({ initial }: { initial: Card[] }) {
   return (
     <>
       <DndContext
+        id="centers-kanban"
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={onDragStart}
