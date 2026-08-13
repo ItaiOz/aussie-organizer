@@ -6,10 +6,17 @@ export const authConfig: NextAuthConfig = {
   providers: [],
   callbacks: {
     authorized({ auth, request }) {
-      const isLogin = request.nextUrl.pathname === "/login";
+      const { pathname } = request.nextUrl;
+      const isLogin = pathname === "/login";
       const isAuthed = !!auth?.user;
-      if (isLogin) return isAuthed ? Response.redirect(new URL("/", request.nextUrl)) : true;
-      return isAuthed;
+      const isStaff = (auth?.user as { role?: string } | undefined)?.role === "staff";
+      if (isLogin) {
+        return isAuthed ? Response.redirect(new URL(isStaff ? "/entry" : "/", request.nextUrl)) : true;
+      }
+      if (!isAuthed) return false;
+      // Staff can only use the daily-entry screen
+      if (isStaff && pathname !== "/entry") return Response.redirect(new URL("/entry", request.nextUrl));
+      return true;
     },
     async jwt({ token, user }) {
       if (user) token.role = (user as { role?: string }).role ?? "manager";

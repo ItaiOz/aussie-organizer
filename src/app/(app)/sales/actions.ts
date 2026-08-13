@@ -1,11 +1,11 @@
 "use server";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
-import { startOfDay } from "date-fns";
+import { dateOnlyUTC } from "@/lib/format";
 
 export async function getDailySale(centerId: string, dateStr: string) {
   if (!centerId || !dateStr) return null;
-  const date = startOfDay(new Date(dateStr));
+  const date = dateOnlyUTC(dateStr);
   const row = await prisma.dailySale.findUnique({
     where: { centerId_date: { centerId, date } },
     include: { employeeSales: true },
@@ -28,7 +28,7 @@ export async function saveDailySale(args: {
     if (isNaN(n) || n < 0) return { ok: false, error: "Amounts must be non-negative" } as const;
   }
 
-  const date = startOfDay(new Date(args.date));
+  const date = dateOnlyUTC(args.date);
 
   await prisma.$transaction(async (tx) => {
     const sale = await tx.dailySale.upsert({

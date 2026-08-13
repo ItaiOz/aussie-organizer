@@ -30,7 +30,7 @@ export default async function SalesPage() {
   const [recent, employees, centers, weeklySales] = await Promise.all([
     prisma.dailySale.findMany({
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-      include: { center: true, employeeSales: { include: { employee: true } } },
+      include: { center: true, employeeSales: { include: { employee: true } }, saleExpenses: true },
       take: 50,
     }),
     prisma.employee.findMany({
@@ -196,12 +196,13 @@ export default async function SalesPage() {
                   <TableHead className="text-right">Refund</TableHead>
                   <TableHead className="text-right">Net</TableHead>
                   <TableHead>Salespeople</TableHead>
+                  <TableHead>Expenses</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {recent.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-zinc-500 py-12">
+                    <TableCell colSpan={8} className="text-center text-zinc-500 py-12">
                       No entries yet.
                     </TableCell>
                   </TableRow>
@@ -222,6 +223,11 @@ export default async function SalesPage() {
                           : s.employeeSales
                               .map((es) => `${es.employee.fullName} (${money(es.amount)})`)
                               .join(", ")}
+                      </TableCell>
+                      <TableCell className="text-zinc-500 text-sm">
+                        {s.saleExpenses.length === 0
+                          ? "—"
+                          : s.saleExpenses.map((ex) => `${ex.title} (${money(ex.amount)})`).join(", ")}
                       </TableCell>
                     </TableRow>
                   );
