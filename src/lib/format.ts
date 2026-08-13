@@ -30,3 +30,9 @@ export function isoWeekKey(date: Date) {
   const { start } = weekRange(date);
   return format(start, "yyyy-MM-dd");
 }
+
+// Parse a yyyy-MM-dd form value as a calendar date at UTC midnight, so the
+// stored value is identical no matter which timezone the server runs in.
+export function dateOnlyUTC(s: string) {
+  return new Date(s.slice(0, 10));
+}

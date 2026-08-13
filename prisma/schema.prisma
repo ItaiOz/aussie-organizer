@@ -62,11 +62,22 @@ model DailySale {
   refundAmount        Float    @default(0)
   notes               String?
   employeeSales       EmployeeSale[]
+  saleExpenses        DailySaleExpense[]
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
   @@unique([centerId, date])
   @@index([date])
+}
+
+model DailySaleExpense {
+  id            String    @id @default(cuid())
+  dailySaleId   String
+  dailySale     DailySale @relation(fields: [dailySaleId], references: [id], onDelete: Cascade)
+  title         String
+  amount        Float     @default(0)
+
+  @@index([dailySaleId])
 }
 
 model EmployeeSale {
@@ -102,6 +113,21 @@ model WeeklyPayroll {
 
   @@unique([employeeId, weekStartDate])
   @@index([weekStartDate])
+}
+
+model Expense {
+  id            String   @id @default(cuid())
+  title         String
+  amount        Float    @default(0) // AUD
+  category      String
+  paidBy        String   @default("Account") // Eitan | Moshe | Account
+  datePaid      DateTime
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([datePaid])
+  @@index([category])
 }
 
 // ---------- Housing ----------
