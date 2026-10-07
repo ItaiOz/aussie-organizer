@@ -5,6 +5,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { money, fmtDate } from "@/lib/format";
 import { startOfMonth, endOfMonth, subMonths, format } from "date-fns";
+import { Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { ExpenseFormDialog } from "./expense-form-dialog";
 import { DeleteExpenseButton } from "./delete-expense-button";
 import { EXPENSE_CATEGORIES } from "./categories";
@@ -114,7 +116,20 @@ export default async function ExpensesPage() {
 
   return (
     <>
-      <PageHeader title="Expenses" description="Business expenses by category (AUD)" action={<ExpenseFormDialog />} />
+      <PageHeader
+        title="Expenses"
+        description="Business expenses by category (AUD)"
+        action={
+          <div className="flex gap-2">
+            <Button variant="outline" asChild>
+              <a href="/expenses/export" download>
+                <Download className="h-4 w-4" /> Export to Excel
+              </a>
+            </Button>
+            <ExpenseFormDialog />
+          </div>
+        }
+      />
       <PageBody>
         <Card className="mb-6">
           <CardHeader>

@@ -120,7 +120,7 @@ model Expense {
   title         String
   amount        Float    @default(0) // AUD
   category      String
-  paidBy        String   @default("Account") // Eitan | Moshe | Account
+  paidBy        String   @default("Account") // Eitan | Moshe | Moshe and Eitan | Account
   datePaid      DateTime
   notes         String?
   createdAt     DateTime @default(now())
