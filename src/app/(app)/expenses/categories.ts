@@ -1,6 +1,7 @@
 export const EXPENSE_CATEGORIES = [
   "Rent",
   "Stock",
+  "Storage",
   "Housing",
   "Travel",
   "Booking",
