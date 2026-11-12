@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { format } from "date-fns";
 import { EntryScreen } from "./entry-screen";
 import { getOwnedIds } from "./session-entries";
 
@@ -27,7 +26,8 @@ export default async function EntryPage() {
         id: s.id,
         centerId: s.centerId,
         centerName: s.center.name,
-        date: format(s.date, "yyyy-MM-dd"),
+        date: s.date.toISOString().slice(0, 10),
+        createdAt: s.createdAt.toISOString(),
         cashAmount: s.cashAmount,
         cardAmount: s.cardAmount,
         refundAmount: s.refundAmount,

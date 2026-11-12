@@ -17,10 +17,28 @@ export type StaffEntryInput = {
 };
 
 const ALREADY = "Sales for this center and date were already submitted. Please talk to your manager." as const;
+const LOCKED = "This entry is locked after midnight. Please talk to your manager." as const;
 
-function validate(args: StaffEntryInput): string | null {
+// Calendar day of `d` on a device whose Date#getTimezoneOffset() is `tzOffset`.
+function deviceDay(d: Date, tzOffset: number) {
+  return new Date(d.getTime() - tzOffset * 60_000).toISOString().slice(0, 10);
+}
+
+const validOffset = (tzOffset: number) => Number.isInteger(tzOffset) && tzOffset >= -840 && tzOffset <= 720;
+
+// Submitted from this device, and submitted today by the device's clock.
+async function canChange(id: string, tzOffset: number) {
+  if (!validOffset(tzOffset)) return false;
+  if (!(await getOwnedIds()).includes(id)) return false;
+  const sale = await prisma.dailySale.findUnique({ where: { id }, select: { createdAt: true } });
+  return !!sale && deviceDay(sale.createdAt, tzOffset) === deviceDay(new Date(), tzOffset);
+}
+
+function validate(args: StaffEntryInput, tzOffset: number): string | null {
   if (!args.centerId) return "Pick a shopping center";
   if (!args.date) return "Date required";
+  if (!validOffset(tzOffset)) return "Check your phone's date and time";
+  if (args.date > deviceDay(new Date(), tzOffset)) return "You can't report sales for a future date";
   for (const n of [args.cashAmount, args.cardAmount, args.refundAmount]) {
     if (isNaN(n) || n < 0) return "Amounts must be non-negative";
   }
@@ -41,8 +59,8 @@ function revalidateAll() {
   revalidatePath("/payroll");
 }
 
-export async function submitEntry(args: StaffEntryInput) {
-  const error = validate(args);
+export async function submitEntry(args: StaffEntryInput, tzOffset: number) {
+  const error = validate(args, tzOffset);
   if (error) return { ok: false, error } as const;
 
   const date = dateOnlyUTC(args.date);
@@ -82,10 +100,9 @@ export async function submitEntry(args: StaffEntryInput) {
   return { ok: true } as const;
 }
 
-export async function updateMyEntry(id: string, args: StaffEntryInput) {
-  const owned = await getOwnedIds();
-  if (!owned.includes(id)) return { ok: false, error: "This entry can no longer be edited" } as const;
-  const error = validate(args);
+export async function updateMyEntry(id: string, args: StaffEntryInput, tzOffset: number) {
+  if (!(await canChange(id, tzOffset))) return { ok: false, error: LOCKED } as const;
+  const error = validate(args, tzOffset);
   if (error) return { ok: false, error } as const;
 
   const date = dateOnlyUTC(args.date);
@@ -129,9 +146,9 @@ export async function updateMyEntry(id: string, args: StaffEntryInput) {
   return { ok: true } as const;
 }
 
-export async function deleteMyEntry(id: string) {
+export async function deleteMyEntry(id: string, tzOffset: number) {
+  if (!(await canChange(id, tzOffset))) return { ok: false, error: LOCKED } as const;
   const owned = await getOwnedIds();
-  if (!owned.includes(id)) return { ok: false, error: "This entry can no longer be deleted" } as const;
 
   await prisma.dailySale.deleteMany({ where: { id } });
   await saveOwnedIds(owned.filter((x) => x !== id));

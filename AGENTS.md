@@ -26,7 +26,7 @@ Stack: Next.js 16 (App Router, `src/proxy.ts` instead of middleware), TypeScript
 | Leasing pipeline: kanban need_to_contact → contacted → booked. Only `booked` centers are operational. | `/centers` | done |
 | Employees (hourly rate, commission rate) | `/employees` | done |
 | Daily sales: one `DailySale` per center+date (cash/card/refund), optional per-salesperson `EmployeeSale` split, optional `DailySaleExpense` lines. Weekly by-center pivot + last-30-days tab. | `/sales` | done |
-| Staff entry screen: phone form for end-of-shift sales. Own entries are editable until the browser session ends (session cookie); duplicate center+date is blocked. | `/entry` | done |
+| Staff entry screen: phone form for end-of-shift sales, any past or current date (no future dates). Entries submitted today from this device are editable/deletable until the device's midnight (48h cookie + server check on `createdAt`); each chosen salesperson needs an amount; duplicate center+date is blocked. Admins reach it via the sidebar "Daily entry" link. | `/entry` | done |
 | Expenses: fixed categories in `expenses/categories.ts`, totals, paid-by | `/expenses` | done |
 | Dashboard: KPIs + sales chart | `/dashboard` | done |
 | Weekly payroll: base hours × rate + commission + bonuses − deductions (incl. rent share) | `/payroll` | basic |

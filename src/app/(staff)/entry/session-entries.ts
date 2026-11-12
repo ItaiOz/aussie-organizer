@@ -1,8 +1,11 @@
 import { cookies } from "next/headers";
 
-// IDs of DailySale rows created by this browser session. Stored in a session
-// cookie (no maxAge) so edit/delete rights disappear when the browser closes.
+// IDs of DailySale rows submitted from this device. Kept for 2 days so they
+// survive the browser closing; the screen only shows (and the server only
+// allows editing) entries dated the device's current day, so they effectively
+// vanish at the device's midnight.
 const COOKIE = "staff_entries";
+const MAX_AGE = 60 * 60 * 48;
 
 export async function getOwnedIds(): Promise<string[]> {
   const jar = await cookies();
@@ -17,5 +20,5 @@ export async function getOwnedIds(): Promise<string[]> {
 
 export async function saveOwnedIds(ids: string[]) {
   const jar = await cookies();
-  jar.set(COOKIE, JSON.stringify(ids.slice(-30)), { httpOnly: true, sameSite: "lax", path: "/" });
+  jar.set(COOKIE, JSON.stringify(ids.slice(-30)), { httpOnly: true, sameSite: "lax", path: "/", maxAge: MAX_AGE });
 }

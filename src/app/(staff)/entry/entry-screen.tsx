@@ -1,5 +1,5 @@
 "use client";
-import { useState, useTransition } from "react";
+import { useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 import { Plus, X, Pencil, Trash2 } from "lucide-react";
 import { format } from "date-fns";
@@ -18,6 +18,7 @@ type Submission = {
   centerId: string;
   centerName: string;
   date: string;
+  createdAt: string;
   cashAmount: number;
   cardAmount: number;
   refundAmount: number;
@@ -34,6 +35,13 @@ const rowKey = () =>
 const newSaleRow = (): SaleRow => ({ key: rowKey(), employeeId: "", amount: "" });
 const newExpenseRow = (): ExpenseRow => ({ key: rowKey(), title: "", amount: "" });
 
+// The device's local date; null during server render, where the device clock is unknown.
+// Edit/delete send the device's timezone so the server can tell what "today" is there.
+const deviceToday = () => format(new Date(), "yyyy-MM-dd");
+const tzOffset = () => new Date().getTimezoneOffset();
+const noSubscribe = () => () => {};
+const useDeviceToday = () => useSyncExternalStore(noSubscribe, deviceToday, () => null);
+
 export function EntryScreen({
   centers,
   employees,
@@ -44,8 +52,10 @@ export function EntryScreen({
   submissions: Submission[];
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const today = useDeviceToday();
   const [centerId, setCenterId] = useState("");
-  const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [pickedDate, setPickedDate] = useState("");
+  const date = pickedDate || today || "";
   const [cash, setCash] = useState("");
   const [card, setCard] = useState("");
   const [refund, setRefund] = useState("");
@@ -53,23 +63,25 @@ export function EntryScreen({
   const [saleRows, setSaleRows] = useState<SaleRow[]>([newSaleRow()]);
   const [expenseRows, setExpenseRows] = useState<ExpenseRow[]>([]);
   const [pending, startTransition] = useTransition();
+  const [showErrors, setShowErrors] = useState(false);
 
   const reset = () => {
     setEditingId(null);
     setCenterId("");
-    setDate(format(new Date(), "yyyy-MM-dd"));
+    setPickedDate("");
     setCash("");
     setCard("");
     setRefund("");
     setNotes("");
     setSaleRows([newSaleRow()]);
     setExpenseRows([]);
+    setShowErrors(false);
   };
 
   const loadForEdit = (s: Submission) => {
     setEditingId(s.id);
     setCenterId(s.centerId);
-    setDate(s.date);
+    setPickedDate(s.date);
     setCash(s.cashAmount > 0 ? String(s.cashAmount) : "");
     setCard(s.cardAmount > 0 ? String(s.cardAmount) : "");
     setRefund(s.refundAmount > 0 ? String(s.refundAmount) : "");
@@ -85,8 +97,29 @@ export function EntryScreen({
 
   const total = Number(cash || 0) + Number(card || 0) - Number(refund || 0);
 
+  const todays = submissions.filter((s) => format(new Date(s.createdAt), "yyyy-MM-dd") === today);
+
+  // A salesperson row counts once either field is filled; both are then required.
+  const missingAmount = (r: SaleRow) => !!r.employeeId && r.amount.trim() === "";
+  const missingPerson = (r: SaleRow) => !r.employeeId && r.amount.trim() !== "";
+
   const onSubmit = () =>
     startTransition(async () => {
+      if (!date) return;
+      if (date > deviceToday()) {
+        toast.error("You can't report sales for a future date");
+        return;
+      }
+      if (saleRows.some(missingAmount)) {
+        setShowErrors(true);
+        toast.error("Enter an amount for each salesperson");
+        return;
+      }
+      if (saleRows.some(missingPerson)) {
+        setShowErrors(true);
+        toast.error("Pick a salesperson for each amount");
+        return;
+      }
       const input: StaffEntryInput = {
         centerId,
         date,
@@ -95,13 +128,13 @@ export function EntryScreen({
         refundAmount: Number(refund || 0),
         notes: notes.trim() || null,
         employeeSales: saleRows
-          .filter((r) => r.employeeId && Number(r.amount || 0) > 0)
+          .filter((r) => r.employeeId)
           .map((r) => ({ employeeId: r.employeeId, amount: Number(r.amount) })),
         expenses: expenseRows
           .filter((r) => r.title.trim() && Number(r.amount || 0) > 0)
           .map((r) => ({ title: r.title, amount: Number(r.amount) })),
       };
-      const res = editingId ? await updateMyEntry(editingId, input) : await submitEntry(input);
+      const res = editingId ? await updateMyEntry(editingId, input, tzOffset()) : await submitEntry(input, tzOffset());
       if (res.ok) {
         toast.success(editingId ? "Updated" : "Submitted — thank you!");
         reset();
@@ -139,7 +172,14 @@ export function EntryScreen({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="date">Date</Label>
-                <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+                <Input
+                  id="date"
+                  type="date"
+                  value={date}
+                  max={today ?? undefined}
+                  onChange={(e) => setPickedDate(e.target.value)}
+                  required
+                />
               </div>
             </div>
 
@@ -159,7 +199,10 @@ export function EntryScreen({
                     value={row.employeeId}
                     onValueChange={(v) => setSaleRows((rs) => rs.map((r) => (r.key === row.key ? { ...r, employeeId: v } : r)))}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger
+                      aria-invalid={showErrors && missingPerson(row)}
+                      className={showErrors && missingPerson(row) ? "border-red-500" : undefined}
+                    >
                       <SelectValue placeholder="Select employee" />
                     </SelectTrigger>
                     <SelectContent>
@@ -177,6 +220,8 @@ export function EntryScreen({
                     inputMode="decimal"
                     placeholder="Amount"
                     value={row.amount}
+                    aria-invalid={showErrors && missingAmount(row)}
+                    className={showErrors && missingAmount(row) ? "border-red-500" : undefined}
                     onChange={(e) => setSaleRows((rs) => rs.map((r) => (r.key === row.key ? { ...r, amount: e.target.value } : r)))}
                   />
                   <Button
@@ -271,7 +316,7 @@ export function EntryScreen({
                   Cancel edit
                 </Button>
               )}
-              <Button type="submit" className="flex-1" disabled={pending}>
+              <Button type="submit" className="flex-1" disabled={pending || !date}>
                 {pending ? "Saving…" : editingId ? "Update summary" : "Submit summary"}
               </Button>
             </div>
@@ -279,13 +324,13 @@ export function EntryScreen({
         </CardContent>
       </Card>
 
-      {submissions.length > 0 && (
+      {todays.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Your submissions (this session)</CardTitle>
+            <CardTitle>Your submissions today</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {submissions.map((s) => {
+            {todays.map((s) => {
               const net = s.cashAmount + s.cardAmount - s.refundAmount;
               return (
                 <div key={s.id} className="rounded-md border border-zinc-200 p-3 flex items-start justify-between gap-3">
@@ -318,7 +363,7 @@ export function EntryScreen({
                       onClick={() => {
                         if (!confirm(`Delete the summary for ${s.centerName} on ${fmtDate(s.date)}?`)) return;
                         startTransition(async () => {
-                          const res = await deleteMyEntry(s.id);
+                          const res = await deleteMyEntry(s.id, tzOffset());
                           if (res.ok) {
                             toast.success("Deleted");
                             if (editingId === s.id) reset();
@@ -333,7 +378,7 @@ export function EntryScreen({
               );
             })}
             <p className="text-xs text-zinc-400">
-              You can edit or delete these until you sign out or close the browser.
+              You can edit or delete these on this phone until midnight. After that, ask your manager.
             </p>
           </CardContent>
         </Card>
