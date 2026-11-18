@@ -3,27 +3,32 @@ import { PageHeader, PageBody } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { money, fmtDate } from "@/lib/format";
-import { startOfWeek, endOfWeek, subWeeks, subDays, startOfDay, format } from "date-fns";
+import { money, fmtDate, dateOnlyUTC } from "@/lib/format";
+import { subDays, startOfDay, format } from "date-fns";
 import { SaleFormDialog } from "./sale-form-dialog";
 import { DailyTab } from "./daily-tab";
 
 export const dynamic = "force-dynamic";
 
-const WEEKS_BACK = 6;
+// Weekly table range (Monday to Sunday weeks), shown oldest → newest left to right.
+const WEEKS_FROM = "2026-11-09";
+const WEEKS_TO = "2026-12-27";
 const DAYS_BACK = 30;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const dayLabel = (d: Date) => d.toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "UTC" });
 
 export default async function SalesPage() {
   const now = new Date();
+  // Sale dates are stored at UTC midnight, so weeks are built on UTC calendar days.
   const weeks: { start: Date; end: Date; key: string; label: string }[] = [];
-  for (let i = 0; i < WEEKS_BACK; i++) {
-    const ref = subWeeks(now, i);
-    const start = startOfWeek(ref, { weekStartsOn: 1 });
-    const end = endOfWeek(ref, { weekStartsOn: 1 });
-    weeks.push({ start, end, key: format(start, "yyyy-MM-dd"), label: `${format(start, "d MMM")} – ${format(end, "d MMM")}` });
+  const lastEnd = dateOnlyUTC(WEEKS_TO);
+  for (let start = dateOnlyUTC(WEEKS_FROM); start <= lastEnd; start = new Date(start.getTime() + 7 * DAY_MS)) {
+    const end = new Date(start.getTime() + 6 * DAY_MS);
+    weeks.push({ start, end, key: start.toISOString().slice(0, 10), label: `${dayLabel(start)} – ${dayLabel(end)}` });
   }
 
-  const oldestWeekStart = weeks[weeks.length - 1].start;
+  const oldestWeekStart = weeks[0].start;
   const oldestDay = startOfDay(subDays(now, DAYS_BACK - 1));
   const oldestStart = oldestDay < oldestWeekStart ? oldestDay : oldestWeekStart;
 
@@ -128,7 +133,9 @@ export default async function SalesPage() {
           <TabsContent value="by-center">
             <Card>
               <CardHeader>
-                <CardTitle>Sales by center, by week (last {WEEKS_BACK} weeks)</CardTitle>
+                <CardTitle>
+                  Sales by center, by week ({dayLabel(weeks[0].start)} – {dayLabel(weeks[weeks.length - 1].end)})
+                </CardTitle>
               </CardHeader>
               <CardContent className="p-0 overflow-x-auto">
                 <Table>
