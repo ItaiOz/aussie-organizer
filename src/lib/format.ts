@@ -36,3 +36,9 @@ export function isoWeekKey(date: Date) {
 export function dateOnlyUTC(s: string) {
   return new Date(s.slice(0, 10));
 }
+
+// Today's calendar date where the business runs (Queensland), as UTC midnight
+// to match how sale dates are stored.
+export function businessTodayUTC() {
+  return dateOnlyUTC(new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Brisbane" }).format(new Date()));
+}

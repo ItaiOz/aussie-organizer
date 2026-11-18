@@ -65,6 +65,19 @@ export default async function SalesPage() {
     }
   }
 
+  // Column totals across all centers
+  const weekTotals = blankRow();
+  for (const row of Object.values(byCenter)) {
+    for (const w of weeks) {
+      const t = weekTotals[w.key];
+      t.cash += row[w.key].cash;
+      t.card += row[w.key].card;
+      t.refund += row[w.key].refund;
+      t.net = t.cash + t.card - t.refund;
+    }
+  }
+  const grandTotal = Object.values(weekTotals).reduce((s, x) => s + x.net, 0);
+
   // Daily aggregation, keyed by date with per-center breakdown
   type CenterCell = { cash: number; card: number; refund: number; net: number };
   type DailyCell = { date: string; label: string; perCenter: Record<string, CenterCell> };
@@ -166,6 +179,32 @@ export default async function SalesPage() {
                         </TableRow>
                       );
                     })}
+                    {centers.length > 0 && (
+                      <TableRow className="border-t-2 border-zinc-300 bg-zinc-50">
+                        <TableCell className="sticky left-0 bg-zinc-50 font-semibold">Total</TableCell>
+                        {weeks.map((w) => {
+                          const cell = weekTotals[w.key];
+                          return (
+                            <TableCell key={w.key} className="text-right">
+                              {cell.net === 0 && cell.cash === 0 && cell.card === 0 ? (
+                                <span className="text-zinc-300">—</span>
+                              ) : (
+                                <div>
+                                  <div className={"font-semibold " + (cell.net < 0 ? "text-red-600" : "")}>{money(cell.net)}</div>
+                                  <div className="text-xs text-zinc-400">
+                                    C {money(cell.cash)} · Cr {money(cell.card)}
+                                    {cell.refund > 0 && <> · −{money(cell.refund)}</>}
+                                  </div>
+                                </div>
+                              )}
+                            </TableCell>
+                          );
+                        })}
+                        <TableCell className={"text-right font-bold " + (grandTotal < 0 ? "text-red-600" : "")}>
+                          {money(grandTotal)}
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>

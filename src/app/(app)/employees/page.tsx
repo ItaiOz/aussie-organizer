@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { money } from "@/lib/format";
+import { money, businessTodayUTC } from "@/lib/format";
 import { subDays } from "date-fns";
 import { EmployeeFormDialog } from "./employee-form-dialog";
 
@@ -14,16 +14,28 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export default async function EmployeesPage() {
-  const since = subDays(new Date(), 30);
-  const [employees, salesAgg] = await Promise.all([
+  // Windows include today: last 7 days = today + the 6 days before.
+  const today = businessTodayUTC();
+  const since7 = subDays(today, 6);
+  const since30 = subDays(today, 29);
+  const yearStart = new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
+  const oldest = since30 < yearStart ? since30 : yearStart;
+
+  const [employees, sales] = await Promise.all([
     prisma.employee.findMany({ orderBy: { fullName: "asc" } }),
-    prisma.employeeSale.groupBy({
-      by: ["employeeId"],
-      _sum: { amount: true },
-      where: { dailySale: { date: { gte: since } } },
+    prisma.employeeSale.findMany({
+      where: { dailySale: { date: { gte: oldest, lte: today } } },
+      select: { employeeId: true, amount: true, dailySale: { select: { date: true } } },
     }),
   ]);
-  const salesByEmp = Object.fromEntries(salesAgg.map((r) => [r.employeeId, r._sum.amount ?? 0]));
+  const totals: Record<string, { d7: number; d30: number; ytd: number }> = {};
+  for (const s of sales) {
+    const t = (totals[s.employeeId] ??= { d7: 0, d30: 0, ytd: 0 });
+    const d = s.dailySale.date;
+    if (d >= since7) t.d7 += s.amount;
+    if (d >= since30) t.d30 += s.amount;
+    if (d >= yearStart) t.ytd += s.amount;
+  }
 
   return (
     <>
@@ -37,14 +49,16 @@ export default async function EmployeesPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead className="text-right">Payout</TableHead>
-                  <TableHead className="text-right">Sales (last 30d)</TableHead>
+                  <TableHead className="text-right whitespace-nowrap">Sales (7d)</TableHead>
+                  <TableHead className="text-right whitespace-nowrap">Sales (30d)</TableHead>
+                  <TableHead className="text-right whitespace-nowrap">Sales (YTD)</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {employees.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-zinc-500 py-12">
+                    <TableCell colSpan={7} className="text-center text-zinc-500 py-12">
                       No employees yet.
                     </TableCell>
                   </TableRow>
@@ -54,7 +68,9 @@ export default async function EmployeesPage() {
                     <TableCell className="font-medium">{e.fullName}</TableCell>
                     <TableCell className="text-zinc-600">{ROLE_LABEL[e.role] ?? e.role}</TableCell>
                     <TableCell className="text-right">{e.payout > 0 ? money(e.payout) : <span className="text-zinc-300">—</span>}</TableCell>
-                    <TableCell className="text-right font-medium">{money(salesByEmp[e.id] ?? 0)}</TableCell>
+                    <TableCell className="text-right">{money(totals[e.id]?.d7 ?? 0)}</TableCell>
+                    <TableCell className="text-right">{money(totals[e.id]?.d30 ?? 0)}</TableCell>
+                    <TableCell className="text-right font-medium">{money(totals[e.id]?.ytd ?? 0)}</TableCell>
                     <TableCell>
                       <span
                         className={
