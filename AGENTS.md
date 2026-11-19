@@ -16,6 +16,7 @@ Stack: Next.js 16 (App Router, `src/proxy.ts` instead of middleware), TypeScript
 - **Keep models minimal.** Add only fields the owner asks for. Example: `Expense` deliberately has no `centerId`.
 - **Money is AUD only.** Format with `money()` from `src/lib/format.ts`.
 - **Dates are calendar dates stored at UTC midnight.** Parse form values with `dateOnlyUTC()`; never use local-time midnight (that bug was fixed once with `scripts/fix-dates.js`).
+- **"Today" on manager screens is Brisbane time** (`businessTodayUTC()`), never the server clock (UTC on Vercel, the laptop's zone locally) or the viewer's browser. The staff `/entry` screen is the exception: it uses the phone's own time.
 - **No git writes** (add/commit/push) unless asked.
 - After `prisma migrate dev`, restart `next dev`: the Prisma client is cached on `globalThis`.
 

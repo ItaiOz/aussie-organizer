@@ -3,28 +3,28 @@ import { PageHeader, PageBody } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { money, fmtDate, dateOnlyUTC } from "@/lib/format";
+import { money, fmtDate, businessTodayUTC } from "@/lib/format";
+import { seasonStart, seasonEnd, addDaysUTC, dayLabel } from "@/lib/season";
+import { centerMetrics } from "@/lib/metrics";
+import { Kpi } from "@/components/kpi";
+import { DollarSign, CalendarDays, Store } from "lucide-react";
 import { subDays, startOfDay, format } from "date-fns";
 import { SaleFormDialog } from "./sale-form-dialog";
 import { DailyTab } from "./daily-tab";
 
 export const dynamic = "force-dynamic";
 
-// Weekly table range (Monday to Sunday weeks), shown oldest → newest left to right.
-const WEEKS_FROM = "2026-11-09";
-const WEEKS_TO = "2026-12-27";
 const DAYS_BACK = 30;
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-const dayLabel = (d: Date) => d.toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "UTC" });
+// Fewer trading days than this and one big day would top the average.
+const MIN_DAYS_FOR_AVG = 3;
 
 export default async function SalesPage() {
   const now = new Date();
   // Sale dates are stored at UTC midnight, so weeks are built on UTC calendar days.
   const weeks: { start: Date; end: Date; key: string; label: string }[] = [];
-  const lastEnd = dateOnlyUTC(WEEKS_TO);
-  for (let start = dateOnlyUTC(WEEKS_FROM); start <= lastEnd; start = new Date(start.getTime() + 7 * DAY_MS)) {
-    const end = new Date(start.getTime() + 6 * DAY_MS);
+  const lastEnd = seasonEnd();
+  for (let start = seasonStart(); start <= lastEnd; start = addDaysUTC(start, 7)) {
+    const end = addDaysUTC(start, 6);
     weeks.push({ start, end, key: start.toISOString().slice(0, 10), label: `${dayLabel(start)} – ${dayLabel(end)}` });
   }
 
@@ -48,9 +48,44 @@ export default async function SalesPage() {
     }),
     prisma.dailySale.findMany({
       where: { date: { gte: oldestStart } },
-      select: { date: true, centerId: true, cashAmount: true, cardAmount: true, refundAmount: true },
+      select: {
+        date: true,
+        centerId: true,
+        cashAmount: true,
+        cardAmount: true,
+        refundAmount: true,
+        saleExpenses: { select: { amount: true } },
+      },
     }),
   ]);
+
+  const performance = centerMetrics(
+    centers.map((c) => ({ id: c.id, name: c.name })),
+    weeklySales.map((s) => ({ ...s, expenseTotal: s.saleExpenses.reduce((t, x) => t + x.amount, 0) })),
+    seasonStart(),
+    seasonEnd(),
+    businessTodayUTC()
+  );
+
+  // Summary cards
+  const today = businessTodayUTC();
+  const netOf = (r: { cashAmount: number; cardAmount: number; refundAmount: number }) =>
+    r.cashAmount + r.cardAmount - r.refundAmount;
+  const seasonTotal = performance.reduce((t, c) => t + c.total, 0);
+  const seasonEntries = performance.reduce((t, c) => t + c.days, 0);
+  const tradingCenters = performance.filter((c) => c.days > 0).length;
+  // This week (Monday → today) vs the same weekdays last week
+  const thisMon = addDaysUTC(today, -((today.getUTCDay() + 6) % 7));
+  const lastMon = addDaysUTC(thisMon, -7);
+  const lastSameDay = addDaysUTC(today, -7);
+  const weekSoFar = weeklySales.filter((s) => s.date >= thisMon && s.date <= today).reduce((t, s) => t + netOf(s), 0);
+  const lastWeekSoFar = weeklySales
+    .filter((s) => s.date >= lastMon && s.date <= lastSameDay)
+    .reduce((t, s) => t + netOf(s), 0);
+  const weekChange = lastWeekSoFar ? (weekSoFar - lastWeekSoFar) / lastWeekSoFar : null;
+  const bestAvgCenter = performance
+    .filter((c) => c.days >= MIN_DAYS_FOR_AVG && c.avgPerDay !== null)
+    .sort((a, b) => (b.avgPerDay ?? 0) - (a.avgPerDay ?? 0))[0];
 
   type Cell = { cash: number; card: number; refund: number; net: number };
   const blankRow = () => Object.fromEntries(weeks.map((w) => [w.key, { cash: 0, card: 0, refund: 0, net: 0 }])) as Record<string, Cell>;
@@ -124,6 +159,32 @@ export default async function SalesPage() {
         }
       />
       <PageBody>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <Kpi
+            label="Season to date"
+            value={money(seasonTotal)}
+            sub={`${seasonEntries} report${seasonEntries === 1 ? "" : "s"} · ${tradingCenters} center${tradingCenters === 1 ? "" : "s"} trading`}
+            tone="emerald"
+            icon={DollarSign}
+          />
+          <Kpi
+            label="This week so far"
+            value={money(weekSoFar)}
+            change={{ value: weekChange, vs: "same days last week" }}
+            sub={`Last week same days ${money(lastWeekSoFar)}`}
+            tone="sky"
+            icon={CalendarDays}
+          />
+          <Kpi
+            label="Best average / day"
+            compact
+            value={bestAvgCenter ? `${bestAvgCenter.name} · ${money(bestAvgCenter.avgPerDay ?? 0)}` : "—"}
+            sub={bestAvgCenter ? `Over ${bestAvgCenter.days} trading days` : `Needs ${MIN_DAYS_FOR_AVG}+ trading days`}
+            tone="amber"
+            icon={Store}
+          />
+        </div>
+
         <Tabs defaultValue="by-center" className="mb-6">
           <TabsList>
             <TabsTrigger value="by-center">By center</TabsTrigger>

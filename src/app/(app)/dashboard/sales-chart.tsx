@@ -1,6 +1,9 @@
 "use client";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
-import { format } from "date-fns";
+
+// Dates are yyyy-MM-dd calendar days; format in UTC so the viewer's timezone can't shift them.
+const dayFmt = (d: string, opts: Intl.DateTimeFormatOptions) =>
+  new Date(d).toLocaleDateString("en-AU", { ...opts, timeZone: "UTC" });
 
 export function SalesChart({ data }: { data: { date: string; total: number }[] }) {
   return (
@@ -16,7 +19,7 @@ export function SalesChart({ data }: { data: { date: string; total: number }[] }
         <XAxis
           dataKey="date"
           tick={{ fontSize: 11, fill: "#71717a" }}
-          tickFormatter={(d) => format(new Date(d), "d MMM")}
+          tickFormatter={(d) => dayFmt(d, { day: "numeric", month: "short" })}
           axisLine={false}
           tickLine={false}
         />
@@ -28,7 +31,7 @@ export function SalesChart({ data }: { data: { date: string; total: number }[] }
         />
         <Tooltip
           contentStyle={{ borderRadius: 8, border: "1px solid #e4e4e7", fontSize: 12 }}
-          labelFormatter={(d) => format(new Date(d as string), "EEE, d MMM yyyy")}
+          labelFormatter={(d) => dayFmt(d as string, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
           formatter={(v) => [`$${Number(v ?? 0).toLocaleString()}`, "Sales"]}
         />
         <Area type="monotone" dataKey="total" stroke="#18181b" fill="url(#fillSales)" strokeWidth={2} />

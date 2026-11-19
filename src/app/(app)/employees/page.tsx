@@ -1,25 +1,42 @@
 import { prisma } from "@/lib/prisma";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { money, businessTodayUTC } from "@/lib/format";
-import { subDays } from "date-fns";
+import { SortableTable, type SortColumn } from "@/components/sortable-table";
+import { Kpi } from "@/components/kpi";
+import { Trophy, TrendingUp, Star, Award } from "lucide-react";
+import { businessTodayUTC, money } from "@/lib/format";
+import { addDaysUTC, weekdayLabel } from "@/lib/season";
+import { sellerMetrics } from "@/lib/metrics";
 import { EmployeeFormDialog } from "./employee-form-dialog";
 
 export const dynamic = "force-dynamic";
+
+// Fewer days than this and one lucky shift would top the average.
+const MIN_DAYS_FOR_AVG = 3;
 
 const ROLE_LABEL: Record<string, string> = {
   employee: "Employee",
   region_manager: "Region manager",
 };
 
+const COLUMNS: SortColumn[] = [
+  { key: "name", label: "Name", kind: "text" },
+  { key: "role", label: "Role", kind: "text" },
+  { key: "d7", label: "Sales (7d)", kind: "money" },
+  { key: "d30", label: "Sales (30d)", kind: "money" },
+  { key: "ytd", label: "Sales (YTD)", kind: "money", strong: true },
+  { key: "daysWorked", label: "Days worked", kind: "int" },
+  { key: "avgPerDay", label: "Avg / day", kind: "money" },
+  { key: "bestDay", label: "Best day", kind: "money", sub: "bestDayDate" },
+  { key: "share", label: "% of sales", kind: "percent" },
+  { key: "payout", label: "Payout", kind: "money" },
+];
+
 export default async function EmployeesPage() {
-  // Windows include today: last 7 days = today + the 6 days before.
   const today = businessTodayUTC();
-  const since7 = subDays(today, 6);
-  const since30 = subDays(today, 29);
   const yearStart = new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
-  const oldest = since30 < yearStart ? since30 : yearStart;
+  const thirtyAgo = new Date(today.getTime() - 29 * 24 * 60 * 60 * 1000);
+  const oldest = thirtyAgo < yearStart ? thirtyAgo : yearStart;
 
   const [employees, sales] = await Promise.all([
     prisma.employee.findMany({ orderBy: { fullName: "asc" } }),
@@ -28,66 +45,100 @@ export default async function EmployeesPage() {
       select: { employeeId: true, amount: true, dailySale: { select: { date: true } } },
     }),
   ]);
-  const totals: Record<string, { d7: number; d30: number; ytd: number }> = {};
+  const metrics = sellerMetrics(
+    sales.map((s) => ({ employeeId: s.employeeId, amount: s.amount, date: s.dailySale.date })),
+    today
+  );
+
+  // Highlight cards (year to date, except "this week")
+  const weekStart = addDaysUTC(today, -((today.getUTCDay() + 6) % 7));
+  const weekBySeller = new Map<string, number>();
   for (const s of sales) {
-    const t = (totals[s.employeeId] ??= { d7: 0, d30: 0, ytd: 0 });
-    const d = s.dailySale.date;
-    if (d >= since7) t.d7 += s.amount;
-    if (d >= since30) t.d30 += s.amount;
-    if (d >= yearStart) t.ytd += s.amount;
+    if (s.dailySale.date >= weekStart) weekBySeller.set(s.employeeId, (weekBySeller.get(s.employeeId) ?? 0) + s.amount);
   }
+  const nameById = Object.fromEntries(employees.map((e) => [e.id, e.fullName]));
+  const ranked = Object.entries(metrics);
+  const top = <T,>(list: [string, T][], score: (x: T) => number) =>
+    list.reduce<[string, T] | null>((best, x) => (!best || score(x[1]) > score(best[1]) ? x : best), null);
+  const mostSales = top(ranked, (m) => m.ytd);
+  const bestAvg = top(
+    ranked.filter(([, m]) => m.daysWorked >= MIN_DAYS_FOR_AVG),
+    (m) => m.avgPerDay ?? 0
+  );
+  const bestDay = top(ranked, (m) => m.bestDay ?? 0);
+  const topWeek = top([...weekBySeller.entries()], (v) => v);
+
+  const rows = employees.map((e) => {
+    const m = metrics[e.id];
+    return {
+      id: e.id,
+      name: e.fullName,
+      role: ROLE_LABEL[e.role] ?? e.role,
+      d7: m?.d7 ?? 0,
+      d30: m?.d30 ?? 0,
+      ytd: m?.ytd ?? 0,
+      daysWorked: m?.daysWorked ?? 0,
+      avgPerDay: m?.avgPerDay ?? null,
+      bestDay: m?.bestDay ?? null,
+      bestDayDate: m?.bestDayDate ?? null,
+      share: m?.share ?? null,
+      payout: e.payout > 0 ? e.payout : null,
+    };
+  });
 
   return (
     <>
       <PageHeader title="Employees" description="People in your business" action={<EmployeeFormDialog />} />
       <PageBody>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <Kpi
+            label="Most sales (YTD)"
+            tone="emerald"
+            icon={Trophy}
+            compact
+            value={mostSales ? `${nameById[mostSales[0]]} · ${money(mostSales[1].ytd)}` : "—"}
+            sub={mostSales ? `Over ${mostSales[1].daysWorked} days worked` : "No sales yet"}
+          />
+          <Kpi
+            label="Highest average / day"
+            tone="sky"
+            icon={TrendingUp}
+            compact
+            value={bestAvg ? `${nameById[bestAvg[0]]} · ${money(bestAvg[1].avgPerDay ?? 0)}` : "—"}
+            sub={bestAvg ? `Over ${bestAvg[1].daysWorked} days worked` : `Needs ${MIN_DAYS_FOR_AVG}+ days worked`}
+          />
+          <Kpi
+            label="Best single day"
+            tone="amber"
+            icon={Star}
+            compact
+            value={bestDay?.[1].bestDay ? `${nameById[bestDay[0]]} · ${money(bestDay[1].bestDay)}` : "—"}
+            sub={bestDay?.[1].bestDayDate ? weekdayLabel(new Date(bestDay[1].bestDayDate)) : "No sales yet"}
+          />
+          <Kpi
+            label="Top salesperson this week"
+            tone="rose"
+            icon={Award}
+            compact
+            value={topWeek ? `${nameById[topWeek[0]]} · ${money(topWeek[1])}` : "—"}
+            sub={topWeek ? "Monday to today" : "No sales this week yet"}
+          />
+        </div>
+
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead className="text-right">Payout</TableHead>
-                  <TableHead className="text-right whitespace-nowrap">Sales (7d)</TableHead>
-                  <TableHead className="text-right whitespace-nowrap">Sales (30d)</TableHead>
-                  <TableHead className="text-right whitespace-nowrap">Sales (YTD)</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {employees.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center text-zinc-500 py-12">
-                      No employees yet.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {employees.map((e) => (
-                  <TableRow key={e.id}>
-                    <TableCell className="font-medium">{e.fullName}</TableCell>
-                    <TableCell className="text-zinc-600">{ROLE_LABEL[e.role] ?? e.role}</TableCell>
-                    <TableCell className="text-right">{e.payout > 0 ? money(e.payout) : <span className="text-zinc-300">—</span>}</TableCell>
-                    <TableCell className="text-right">{money(totals[e.id]?.d7 ?? 0)}</TableCell>
-                    <TableCell className="text-right">{money(totals[e.id]?.d30 ?? 0)}</TableCell>
-                    <TableCell className="text-right font-medium">{money(totals[e.id]?.ytd ?? 0)}</TableCell>
-                    <TableCell>
-                      <span
-                        className={
-                          e.status === "active"
-                            ? "text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700"
-                            : "text-xs px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600"
-                        }
-                      >
-                        {e.status}
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <SortableTable
+              columns={COLUMNS}
+              rows={rows}
+              defaultSort={{ key: "ytd", dir: "desc" }}
+              empty="No employees yet."
+            />
           </CardContent>
         </Card>
+        <p className="mt-3 text-xs text-zinc-500">
+          7d and 30d include today. Days worked, average, best day and % of sales are year to date. Click a column
+          header to sort.
+        </p>
       </PageBody>
     </>
   );
