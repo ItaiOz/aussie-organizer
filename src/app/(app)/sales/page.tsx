@@ -2,12 +2,11 @@ import { prisma } from "@/lib/prisma";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { money, fmtDate, businessTodayUTC } from "@/lib/format";
 import { seasonStart, seasonEnd, addDaysUTC, dayLabel } from "@/lib/season";
 import { centerMetrics } from "@/lib/metrics";
 import { Kpi } from "@/components/kpi";
-import { DollarSign, CalendarDays, Store } from "lucide-react";
+import { DollarSign, CalendarDays, Store, CreditCard } from "lucide-react";
 import { subDays, startOfDay, format } from "date-fns";
 import { SaleFormDialog } from "./sale-form-dialog";
 import { DailyTab } from "./daily-tab";
@@ -72,6 +71,12 @@ export default async function SalesPage() {
   const netOf = (r: { cashAmount: number; cardAmount: number; refundAmount: number }) =>
     r.cashAmount + r.cardAmount - r.refundAmount;
   const seasonTotal = performance.reduce((t, c) => t + c.total, 0);
+  // Cash vs credit this season (before refunds), same range as "Season to date"
+  const seasonRows = weeklySales.filter((s) => s.date >= seasonStart() && s.date <= seasonEnd() && s.date <= today);
+  const seasonCash = seasonRows.reduce((t, s) => t + s.cashAmount, 0);
+  const seasonCard = seasonRows.reduce((t, s) => t + s.cardAmount, 0);
+  const paidTotal = seasonCash + seasonCard;
+  const pctOf = (n: number) => (paidTotal ? `${Math.round((n / paidTotal) * 100)}%` : "—");
   const seasonEntries = performance.reduce((t, c) => t + c.days, 0);
   const tradingCenters = performance.filter((c) => c.days > 0).length;
   // This week (Monday → today) vs the same weekdays last week
@@ -159,7 +164,7 @@ export default async function SalesPage() {
         }
       />
       <PageBody>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <Kpi
             label="Season to date"
             value={money(seasonTotal)}
@@ -183,110 +188,116 @@ export default async function SalesPage() {
             tone="amber"
             icon={Store}
           />
+          <Kpi
+            label="Cash vs credit (season)"
+            compact
+            value={
+              paidTotal
+                ? `Credit · ${money(seasonCard)} (${pctOf(seasonCard)})\nCash · ${money(seasonCash)} (${pctOf(seasonCash)})`
+                : "—"
+            }
+            sub={paidTotal ? "Season to date, before refunds" : "No sales yet"}
+            tone="violet"
+            icon={CreditCard}
+          />
         </div>
 
-        <Tabs defaultValue="by-center" className="mb-6">
-          <TabsList>
-            <TabsTrigger value="by-center">By center</TabsTrigger>
-            <TabsTrigger value="daily">Daily</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="by-center">
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  Sales by center, by week ({dayLabel(weeks[0].start)} – {dayLabel(weeks[weeks.length - 1].end)})
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0 overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="sticky left-0 bg-white">Center</TableHead>
-                      {weeks.map((w) => (
-                        <TableHead key={w.key} className="text-right whitespace-nowrap">{w.label}</TableHead>
-                      ))}
-                      <TableHead className="text-right whitespace-nowrap">Total</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {centers.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={weeks.length + 2} className="text-center text-zinc-500 py-12">
-                          No booked centers yet.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                    {centers.map((c) => {
-                      const row = byCenter[c.id];
-                      const rowTotal = Object.values(row).reduce((s, x) => s + x.net, 0);
-                      return (
-                        <TableRow key={c.id}>
-                          <TableCell className="sticky left-0 bg-white font-medium">{c.name}</TableCell>
-                          {weeks.map((w) => {
-                            const cell = row[w.key];
-                            return (
-                              <TableCell key={w.key} className="text-right">
-                                {cell.net === 0 ? (
-                                  <span className="text-zinc-300">—</span>
-                                ) : (
-                                  <div>
-                                    <div className={"font-medium " + (cell.net < 0 ? "text-red-600" : "")}>{money(cell.net)}</div>
-                                    <div className="text-xs text-zinc-400">
-                                      C {money(cell.cash)} · Cr {money(cell.card)}
-                                      {cell.refund > 0 && <> · −{money(cell.refund)}</>}
-                                    </div>
-                                  </div>
-                                )}
-                              </TableCell>
-                            );
-                          })}
-                          <TableCell className={"text-right font-semibold " + (rowTotal < 0 ? "text-red-600" : "")}>
-                            {money(rowTotal)}
-                          </TableCell>
+        <div className="mb-6">
+          <DailyTab
+            rows={dailyRows}
+            centers={centers.map((c) => ({ id: c.id, name: c.name }))}
+            days={DAYS_BACK}
+            middle={
+              <div className="mb-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>
+                      Sales by center, by week ({dayLabel(weeks[0].start)} – {dayLabel(weeks[weeks.length - 1].end)})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0 overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="sticky left-0 bg-white">Center</TableHead>
+                          {weeks.map((w) => (
+                            <TableHead key={w.key} className="text-right whitespace-nowrap">{w.label}</TableHead>
+                          ))}
+                          <TableHead className="text-right whitespace-nowrap">Total</TableHead>
                         </TableRow>
-                      );
-                    })}
-                    {centers.length > 0 && (
-                      <TableRow className="border-t-2 border-zinc-300 bg-zinc-50">
-                        <TableCell className="sticky left-0 bg-zinc-50 font-semibold">Total</TableCell>
-                        {weeks.map((w) => {
-                          const cell = weekTotals[w.key];
-                          return (
-                            <TableCell key={w.key} className="text-right">
-                              {cell.net === 0 && cell.cash === 0 && cell.card === 0 ? (
-                                <span className="text-zinc-300">—</span>
-                              ) : (
-                                <div>
-                                  <div className={"font-semibold " + (cell.net < 0 ? "text-red-600" : "")}>{money(cell.net)}</div>
-                                  <div className="text-xs text-zinc-400">
-                                    C {money(cell.cash)} · Cr {money(cell.card)}
-                                    {cell.refund > 0 && <> · −{money(cell.refund)}</>}
-                                  </div>
-                                </div>
-                              )}
+                      </TableHeader>
+                      <TableBody>
+                        {centers.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={weeks.length + 2} className="text-center text-zinc-500 py-12">
+                              No booked centers yet.
                             </TableCell>
+                          </TableRow>
+                        )}
+                        {centers.map((c) => {
+                          const row = byCenter[c.id];
+                          const rowTotal = Object.values(row).reduce((s, x) => s + x.net, 0);
+                          return (
+                            <TableRow key={c.id}>
+                              <TableCell className="sticky left-0 bg-white font-medium">{c.name}</TableCell>
+                              {weeks.map((w) => {
+                                const cell = row[w.key];
+                                return (
+                                  <TableCell key={w.key} className="text-right">
+                                    {cell.net === 0 ? (
+                                      <span className="text-zinc-300">—</span>
+                                    ) : (
+                                      <div>
+                                        <div className={"font-medium " + (cell.net < 0 ? "text-red-600" : "")}>{money(cell.net)}</div>
+                                        <div className="text-xs text-zinc-400">
+                                          C {money(cell.cash)} · Cr {money(cell.card)}
+                                          {cell.refund > 0 && <> · −{money(cell.refund)}</>}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </TableCell>
+                                );
+                              })}
+                              <TableCell className={"text-right font-semibold " + (rowTotal < 0 ? "text-red-600" : "")}>
+                                {money(rowTotal)}
+                              </TableCell>
+                            </TableRow>
                           );
                         })}
-                        <TableCell className={"text-right font-bold " + (grandTotal < 0 ? "text-red-600" : "")}>
-                          {money(grandTotal)}
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="daily">
-            <DailyTab
-              rows={dailyRows}
-              centers={centers.map((c) => ({ id: c.id, name: c.name }))}
-              days={DAYS_BACK}
-            />
-          </TabsContent>
-        </Tabs>
+                        {centers.length > 0 && (
+                          <TableRow className="border-t-2 border-zinc-300 bg-zinc-50">
+                            <TableCell className="sticky left-0 bg-zinc-50 font-semibold">Total</TableCell>
+                            {weeks.map((w) => {
+                              const cell = weekTotals[w.key];
+                              return (
+                                <TableCell key={w.key} className="text-right">
+                                  {cell.net === 0 && cell.cash === 0 && cell.card === 0 ? (
+                                    <span className="text-zinc-300">—</span>
+                                  ) : (
+                                    <div>
+                                      <div className={"font-semibold " + (cell.net < 0 ? "text-red-600" : "")}>{money(cell.net)}</div>
+                                      <div className="text-xs text-zinc-400">
+                                        C {money(cell.cash)} · Cr {money(cell.card)}
+                                        {cell.refund > 0 && <> · −{money(cell.refund)}</>}
+                                      </div>
+                                    </div>
+                                  )}
+                                </TableCell>
+                              );
+                            })}
+                            <TableCell className={"text-right font-bold " + (grandTotal < 0 ? "text-red-600" : "")}>
+                              {money(grandTotal)}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </div>
+            }
+          />
+        </div>
 
         <Card>
           <CardHeader>

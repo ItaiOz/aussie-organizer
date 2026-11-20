@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { PageHeader, PageBody } from "@/components/page-header";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { RankedBarChart } from "@/components/ranked-bar-chart";
 import { SortableTable, type SortColumn } from "@/components/sortable-table";
 import { Kpi } from "@/components/kpi";
 import { Trophy, TrendingUp, Star, Award } from "lucide-react";
@@ -68,6 +69,8 @@ export default async function EmployeesPage() {
   const bestDay = top(ranked, (m) => m.bestDay ?? 0);
   const topWeek = top([...weekBySeller.entries()], (v) => v);
 
+  const teamYtd = Object.values(metrics).reduce((t, m) => t + m.ytd, 0);
+
   const rows = employees.map((e) => {
     const m = metrics[e.id];
     return {
@@ -123,6 +126,37 @@ export default async function EmployeesPage() {
             value={topWeek ? `${nameById[topWeek[0]]} · ${money(topWeek[1])}` : "—"}
             sub={topWeek ? "Monday to today" : "No sales this week yet"}
           />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          <Card className="min-w-0 flex flex-col">
+            <CardHeader>
+              <CardTitle>Sales by salesperson (YTD)</CardTitle>
+              <p className="text-xs text-zinc-500">Total by salespeople: {money(teamYtd)}.</p>
+            </CardHeader>
+            <CardContent className="mt-auto">
+              <RankedBarChart
+                kind="money"
+                color="blue"
+                label="Year to date"
+                data={employees.map((e) => ({ name: e.fullName, value: metrics[e.id]?.ytd ?? 0 }))}
+              />
+            </CardContent>
+          </Card>
+          <Card className="min-w-0 flex flex-col">
+            <CardHeader>
+              <CardTitle>Share of sales by salesperson (YTD)</CardTitle>
+              <p className="text-xs text-zinc-500">Each person&apos;s part of the team total. Adds up to 100%.</p>
+            </CardHeader>
+            <CardContent className="mt-auto">
+              <RankedBarChart
+                kind="percent"
+                color="orange"
+                label="Share of sales"
+                data={employees.map((e) => ({ name: e.fullName, value: metrics[e.id]?.share ?? 0 }))}
+              />
+            </CardContent>
+          </Card>
         </div>
 
         <Card>

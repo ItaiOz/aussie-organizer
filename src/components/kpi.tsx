@@ -46,7 +46,9 @@ export function Kpi({
             </div>
           )}
         </div>
-        <div className={cn("font-semibold mt-1", compact ? "text-lg leading-snug" : "text-2xl", t.value)}>{value}</div>
+        <div className={cn("font-semibold mt-1 whitespace-pre-line", compact ? "text-lg leading-snug" : "text-2xl", t.value)}>
+          {value}
+        </div>
         {change && (
           <div
             className={cn(

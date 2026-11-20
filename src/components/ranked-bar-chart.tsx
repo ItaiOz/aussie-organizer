@@ -11,18 +11,19 @@ import {
 } from "recharts";
 import { money } from "@/lib/format";
 
-// One hue per chart; the two charts use validated slots 1 and 2 so they read as different measures.
+// Vertical bars, largest first, one value per label (expense categories, salespeople).
+// One hue per chart; paired charts use validated slots 1 and 2 so they read as different measures.
 const COLORS = { blue: "#2a78d6", orange: "#eb6834" } as const;
 const MAX_CHARS = 10;
 
-type Row = { category: string; value: number };
+type Row = { name: string; value: number };
 
 const fmt = (kind: "money" | "percent", v: number) =>
   kind === "money" ? money(v) : `${(v * 100).toFixed(v < 0.1 ? 1 : 0)}%`;
 const axisFmt = (kind: "money" | "percent", v: number) =>
   kind === "money" ? `$${Math.round(v / 1000)}k` : `${Math.round(v * 100)}%`;
 
-// Wrap a category name into short lines; hyphenate any single word longer than a line.
+// Wrap a label into short lines; hyphenate any single word longer than a line.
 function wrapLabel(text: string) {
   const lines: string[] = [];
   let line = "";
@@ -45,6 +46,28 @@ function wrapLabel(text: string) {
   }
   if (line) lines.push(line);
   return lines;
+}
+
+// Value written bottom-to-top inside the bar; bars too short for the text get it just above instead.
+function VerticalLabel({ x, y, width, height, text }: { x: number; y: number; width: number; height: number; text: string }) {
+  const needed = text.length * 6.6 + 12; // ~px of 11px text plus padding
+  const cx = x + width / 2;
+  const inside = height >= needed;
+  const ty = inside ? y + height - 6 : y - 6;
+  return (
+    <text
+      x={cx}
+      y={ty}
+      transform={`rotate(-90 ${cx} ${ty})`}
+      textAnchor="start"
+      dominantBaseline="central"
+      fontSize={11}
+      fontWeight={inside ? 600 : 400}
+      fill={inside ? "#ffffff" : "#3f3f46"}
+    >
+      {text}
+    </text>
+  );
 }
 
 function WrappedTick({
@@ -74,7 +97,7 @@ function WrappedTick({
   );
 }
 
-export function CategoryChart({
+export function RankedBarChart({
   data,
   kind,
   label,
@@ -104,7 +127,7 @@ export function CategoryChart({
             vertical={false}
           />
           <XAxis
-            dataKey="category"
+            dataKey="name"
             interval={0}
             height={54}
             tick={<WrappedTick />}
@@ -130,13 +153,15 @@ export function CategoryChart({
           <Bar dataKey="value" fill={COLORS[color]} radius={[4, 4, 0, 0]}>
             <LabelList
               dataKey="value"
-              position="top"
-              formatter={(v) =>
-                kind === "money"
-                  ? axisFmt(kind, Number(v))
-                  : fmt(kind, Number(v))
-              }
-              style={{ fontSize: 11, fill: "#3f3f46" }}
+              content={(p) => (
+                <VerticalLabel
+                  x={Number(p.x)}
+                  y={Number(p.y)}
+                  width={Number(p.width)}
+                  height={Number(p.height)}
+                  text={fmt(kind, Number(p.value))}
+                />
+              )}
             />
           </Bar>
         </BarChart>

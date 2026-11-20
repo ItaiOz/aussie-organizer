@@ -16,7 +16,18 @@ type CenterCell = { cash: number; card: number; refund: number; net: number };
 type DailyRow = { date: string; label: string; perCenter: Record<string, CenterCell> };
 type Center = { id: string; name: string };
 
-export function DailyTab({ rows, centers, days }: { rows: DailyRow[]; centers: Center[]; days: number }) {
+// Chart and daily table share one center picker; `middle` renders between them.
+export function DailyTab({
+  rows,
+  centers,
+  days,
+  middle,
+}: {
+  rows: DailyRow[];
+  centers: Center[];
+  days: number;
+  middle?: React.ReactNode;
+}) {
   const [centerId, setCenterId] = useState<string>(ALL);
 
   const colorByCenter = useMemo(() => {
@@ -127,7 +138,15 @@ export function DailyTab({ rows, centers, days }: { rows: DailyRow[]; centers: C
         </CardContent>
       </Card>
 
+      {middle}
+
       <Card>
+        <CardHeader>
+          <CardTitle>
+            Daily breakdown — last {days} days
+            {centerId !== ALL && ` · ${centers.find((c) => c.id === centerId)?.name ?? ""}`}
+          </CardTitle>
+        </CardHeader>
         <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader>
