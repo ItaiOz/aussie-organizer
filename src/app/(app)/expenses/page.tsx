@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ExpenseFormDialog } from "./expense-form-dialog";
 import { DeleteExpenseButton } from "./delete-expense-button";
 import { EXPENSE_CATEGORIES } from "./categories";
-import { CategoryChart } from "./category-chart";
+import { RankedBarChart } from "@/components/ranked-bar-chart";
 
 export const dynamic = "force-dynamic";
 
@@ -144,11 +144,11 @@ export default async function ExpensesPage() {
               <p className="text-xs text-zinc-500">Total spent: {money(grand.allTime)}.</p>
             </CardHeader>
             <CardContent className="mt-auto">
-              <CategoryChart
+              <RankedBarChart
                 kind="money"
                 color="blue"
                 label="All time"
-                data={totals.map((t) => ({ category: t.cat, value: t.allTime }))}
+                data={totals.map((t) => ({ name: t.cat, value: t.allTime }))}
               />
             </CardContent>
           </Card>
@@ -162,11 +162,11 @@ export default async function ExpensesPage() {
             </CardHeader>
             <CardContent className="mt-auto">
               {grossIncome > 0 ? (
-                <CategoryChart
+                <RankedBarChart
                   kind="percent"
                   color="orange"
                   label="Of gross income"
-                  data={totals.map((t) => ({ category: t.cat, value: t.allTime / grossIncome }))}
+                  data={totals.map((t) => ({ name: t.cat, value: t.allTime / grossIncome }))}
                 />
               ) : (
                 <p className="text-sm text-zinc-500">No sales yet.</p>
