@@ -1,12 +1,12 @@
 export const EXPENSE_CATEGORIES = [
-  "Rent",
+  "Centre bookings",
   "Stock",
   "Storage",
-  "Housing",
-  "Travel",
-  "Booking",
-  "Equipment",
-  "Fees & admin",
+  "Equipment & displays",
+  "Accommodation",
+  "Salaries",
+  "Car rental",
+  "Petrol",
   "Other",
 ] as const;
 

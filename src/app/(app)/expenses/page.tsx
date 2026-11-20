@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ExpenseFormDialog } from "./expense-form-dialog";
 import { DeleteExpenseButton } from "./delete-expense-button";
 import { EXPENSE_CATEGORIES } from "./categories";
+import { CategoryChart } from "./category-chart";
 
 export const dynamic = "force-dynamic";
 
@@ -80,9 +81,14 @@ function ExpenseTable({ rows, showCategory }: { rows: ExpenseRow[]; showCategory
 }
 
 export default async function ExpensesPage() {
-  const expenses = await prisma.expense.findMany({
-    orderBy: [{ datePaid: "desc" }, { createdAt: "desc" }],
-  });
+  const [expenses, salesAgg] = await Promise.all([
+    prisma.expense.findMany({
+      orderBy: [{ datePaid: "desc" }, { createdAt: "desc" }],
+    }),
+    prisma.dailySale.aggregate({ _sum: { cashAmount: true, cardAmount: true } }),
+  ]);
+  // Gross income = all sales before refunds (cash + credit), all time
+  const grossIncome = (salesAgg._sum.cashAmount ?? 0) + (salesAgg._sum.cardAmount ?? 0);
 
   const now = new Date();
   const thisMonthStart = startOfMonth(now);
@@ -131,6 +137,44 @@ export default async function ExpensesPage() {
         }
       />
       <PageBody>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          <Card className="min-w-0 flex flex-col">
+            <CardHeader>
+              <CardTitle>Expenses by category (all time)</CardTitle>
+              <p className="text-xs text-zinc-500">Total spent: {money(grand.allTime)}.</p>
+            </CardHeader>
+            <CardContent className="mt-auto">
+              <CategoryChart
+                kind="money"
+                color="blue"
+                label="All time"
+                data={totals.map((t) => ({ category: t.cat, value: t.allTime }))}
+              />
+            </CardContent>
+          </Card>
+          <Card className="min-w-0 flex flex-col">
+            <CardHeader>
+              <CardTitle>Each category as % of gross income</CardTitle>
+              <p className="text-xs text-zinc-500">
+                Gross income (all sales before refunds): {money(grossIncome)}. Over 100% means that category alone cost
+                more than everything sold so far.
+              </p>
+            </CardHeader>
+            <CardContent className="mt-auto">
+              {grossIncome > 0 ? (
+                <CategoryChart
+                  kind="percent"
+                  color="orange"
+                  label="Of gross income"
+                  data={totals.map((t) => ({ category: t.cat, value: t.allTime / grossIncome }))}
+                />
+              ) : (
+                <p className="text-sm text-zinc-500">No sales yet.</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>Totals by category</CardTitle>

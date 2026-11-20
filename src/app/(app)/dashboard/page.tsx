@@ -2,9 +2,10 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { money, businessTodayUTC } from "@/lib/format";
-import { seasonStart, seasonEnd, addDaysUTC, weekdayLabel } from "@/lib/season";
+import { seasonStart, seasonEnd, addDaysUTC, weekdayLabel, DAY_MS } from "@/lib/season";
 import { SalesChart } from "./sales-chart";
 import { Kpi } from "@/components/kpi";
+import { BreakEvenChart, BreakEvenLegend, type BreakEvenPoint } from "./break-even-chart";
 import { DollarSign, CalendarDays, Users, Trophy, Star, CalendarCheck, Award, Store } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,10 @@ const MIN_DAYS_FOR_AVG = 3;
 export default async function DashboardPage() {
   // Calendar days in Brisbane time, matching how sale dates are stored.
   const bizToday = businessTodayUTC();
+  // Days until Christmas in Brisbane; after the 25th, count to next year's
+  let christmas = new Date(Date.UTC(bizToday.getUTCFullYear(), 11, 25));
+  if (christmas < bizToday) christmas = new Date(Date.UTC(bizToday.getUTCFullYear() + 1, 11, 25));
+  const daysToChristmas = Math.round((christmas.getTime() - bizToday.getTime()) / DAY_MS);
   const bizYesterday = addDaysUTC(bizToday, -1);
   const bizWeekStart = addDaysUTC(bizToday, -((bizToday.getUTCDay() + 6) % 7));
   const bizWeekEnd = addDaysUTC(bizWeekStart, 6);
@@ -24,7 +29,7 @@ export default async function DashboardPage() {
   const seasonTo = seasonEnd() < bizToday ? seasonEnd() : bizToday;
   const last30 = addDaysUTC(bizToday, -29); // 30 days including today
 
-  const [compareSales, allSales30, centers, activeEmployees, lowStock, seasonSales, weekSellerSales] = await Promise.all([
+  const [compareSales, allSales30, centers, activeEmployees, seasonSales, weekSellerSales, salesToDate, expensesToDate] = await Promise.all([
     prisma.dailySale.findMany({
       where: { date: { gte: lastWeekStart, lte: bizToday } },
       select: { date: true, cashAmount: true, cardAmount: true, refundAmount: true },
@@ -36,10 +41,6 @@ export default async function DashboardPage() {
     }),
     prisma.shoppingCenter.findMany({ where: { status: "booked" } }),
     prisma.employee.count({ where: { status: "active" } }),
-    prisma.stockLevel.findMany({
-      where: { quantity: { lte: prisma.stockLevel.fields.reorderThreshold } },
-      include: { product: true },
-    }),
     prisma.dailySale.findMany({
       where: { date: { gte: seasonStart(), lte: seasonTo } },
       select: { date: true, cashAmount: true, cardAmount: true, refundAmount: true, center: { select: { name: true } } },
@@ -48,7 +49,35 @@ export default async function DashboardPage() {
       where: { dailySale: { date: { gte: bizWeekStart, lte: bizWeekEnd } } },
       select: { amount: true, employee: { select: { fullName: true } } },
     }),
+    prisma.dailySale.findMany({
+      where: { date: { lte: bizToday } },
+      select: { date: true, cashAmount: true, cardAmount: true, refundAmount: true },
+    }),
+    prisma.expense.findMany({ where: { datePaid: { lte: bizToday } }, select: { datePaid: true, amount: true } }),
   ]);
+
+  // Break-even: running totals across the season. Expenses paid before the season
+  // (mostly stock) are the starting point; days after today are left empty.
+  const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+  const salesByDay = new Map<string, number>();
+  for (const s of salesToDate) salesByDay.set(isoDay(s.date), (salesByDay.get(isoDay(s.date)) ?? 0) + s.cashAmount + s.cardAmount - s.refundAmount);
+  const expensesByDay = new Map<string, number>();
+  for (const e of expensesToDate) expensesByDay.set(isoDay(e.datePaid), (expensesByDay.get(isoDay(e.datePaid)) ?? 0) + e.amount);
+  let cumSales = 0;
+  let cumExpenses = 0;
+  for (const [d, v] of salesByDay) if (d < isoDay(seasonStart())) cumSales += v;
+  for (const [d, v] of expensesByDay) if (d < isoDay(seasonStart())) cumExpenses += v;
+  const breakEven: BreakEvenPoint[] = [];
+  for (let d = seasonStart(); d <= seasonEnd(); d = addDaysUTC(d, 1)) {
+    const key = isoDay(d);
+    if (d > bizToday) {
+      breakEven.push({ date: key, sales: null, expenses: null });
+      continue;
+    }
+    cumSales += salesByDay.get(key) ?? 0;
+    cumExpenses += expensesByDay.get(key) ?? 0;
+    breakEven.push({ date: key, sales: cumSales, expenses: cumExpenses });
+  }
 
   // Season records
   const netOf = (r: { cashAmount: number; cardAmount: number; refundAmount: number }) =>
@@ -122,6 +151,12 @@ export default async function DashboardPage() {
     <>
       <PageHeader title="Dashboard" description="Today, this week, last 30 days" />
       <PageBody>
+        <div className="mb-6 text-center text-2xl font-bold text-red-700 sm:text-3xl">
+          🎄{" "}
+          {daysToChristmas === 0
+            ? "Merry Christmas!"
+            : `${daysToChristmas} day${daysToChristmas === 1 ? "" : "s"} until Christmas`}
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           <Kpi
             label="Sales today"
@@ -219,25 +254,13 @@ export default async function DashboardPage() {
           </Card>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Low stock alerts</CardTitle>
+        <Card className="mt-6">
+          <CardHeader className="space-y-2">
+            <CardTitle>Break-even: sales vs expenses (running totals)</CardTitle>
+            <BreakEvenLegend sales={cumSales} expenses={cumExpenses} />
           </CardHeader>
-          <CardContent>
-            {lowStock.length === 0 ? (
-              <p className="text-sm text-zinc-500">All stock levels above their reorder threshold.</p>
-            ) : (
-              <ul className="space-y-2 text-sm">
-                {lowStock.slice(0, 10).map((sl) => (
-                  <li key={sl.id} className="flex items-center justify-between">
-                    <span className="font-medium">{sl.product.name}</span>
-                    <span className="text-red-600">
-                      {sl.quantity} left (reorder at {sl.reorderThreshold})
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
+          <CardContent className="h-72">
+            <BreakEvenChart data={breakEven} today={isoDay(bizToday)} />
           </CardContent>
         </Card>
       </PageBody>
