@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Info } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { money } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -14,10 +14,48 @@ export type SortColumn = {
   // text: plain · money / int / percent: numbers · trend: signed % (green/red)
   // alert: count shown red when > 0 · status: active/inactive pill · date: yyyy-MM-dd
   kind: "text" | "money" | "int" | "percent" | "trend" | "alert" | "status" | "date";
-  // Optional row key shown as small grey text under the value (e.g. a date)
+  // Optional row key shown as small grey text under the value (a yyyy-MM-dd date or plain text)
   sub?: string;
+  // Row key holding a tone for `sub`; when set, `sub` shows as a coloured pill
+  subTone?: string;
   strong?: boolean;
+  // Header hint, shown on hover of an ⓘ next to the label
+  tooltip?: string;
+  // Row key holding hover text for each cell
+  cellTitle?: string;
 };
+
+// Static class strings so Tailwind keeps them in the build.
+export type Tone = "sky" | "emerald" | "amber" | "violet" | "rose" | "zinc";
+const PILL: Record<Tone, string> = {
+  sky: "bg-sky-50 text-sky-700",
+  emerald: "bg-emerald-50 text-emerald-700",
+  amber: "bg-amber-50 text-amber-800",
+  violet: "bg-violet-50 text-violet-700",
+  rose: "bg-rose-50 text-rose-700",
+  zinc: "bg-zinc-100 text-zinc-600",
+};
+const pill = "inline-block text-xs font-medium px-2 py-0.5 rounded-full";
+
+// Shows instantly on hover, and on tap/focus (phones and keyboard). `below` for headers,
+// where a bubble above would be cut off by the table's top edge.
+function Tip({ text, below, children }: { text: string; below?: boolean; children: React.ReactNode }) {
+  return (
+    <span tabIndex={0} className="group relative inline-flex cursor-help outline-none">
+      {children}
+      <span
+        role="tooltip"
+        className={cn(
+          "pointer-events-none invisible absolute right-0 z-20 w-max max-w-64 whitespace-normal rounded-md bg-zinc-900 px-2.5 py-1.5 text-left text-xs font-normal normal-case tracking-normal text-white opacity-0 shadow-lg transition-opacity",
+          "group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100",
+          below ? "top-full mt-1.5" : "bottom-full mb-1.5"
+        )}
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
 
 const fmtDay = (iso: string) =>
   new Date(iso).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
@@ -34,7 +72,7 @@ function render(col: SortColumn, v: Value) {
     case "trend": {
       const n = v as number;
       return (
-        <span className={n > 0 ? "text-green-700" : n < 0 ? "text-red-600" : ""}>
+        <span className={cn(pill, n > 0 ? "bg-green-50 text-green-700" : n < 0 ? "bg-red-50 text-red-700" : PILL.zinc)}>
           {n > 0 ? "↑" : n < 0 ? "↓" : ""} {Math.abs(n * 100).toFixed(0)}%
         </span>
       );
@@ -67,11 +105,14 @@ export function SortableTable({
   rows,
   defaultSort,
   empty = "Nothing to show yet.",
+  footer,
 }: {
   columns: SortColumn[];
   rows: SortRow[];
   defaultSort: { key: string; dir: "asc" | "desc" };
   empty?: string;
+  // Pinned below the sorted rows, e.g. a Total row
+  footer?: SortRow;
 }) {
   const [sort, setSort] = useState(defaultSort);
 
@@ -89,6 +130,40 @@ export function SortableTable({
     setSort((s) =>
       s.key === c.key ? { key: c.key, dir: s.dir === "asc" ? "desc" : "asc" } : { key: c.key, dir: isNumeric(c) ? "desc" : "asc" }
     );
+
+  const renderRow = (r: SortRow, isFooter: boolean) => (
+    <TableRow key={r.id} className={cn(isFooter && "border-t-2 border-zinc-300 bg-zinc-50 hover:bg-zinc-50")}>
+      {columns.map((c, i) => (
+        <TableCell
+          key={c.key}
+          className={cn(
+            isNumeric(c) && "text-right",
+            i === 0 && "sticky left-0 font-medium",
+            i === 0 && (isFooter ? "bg-zinc-50" : "bg-white"),
+            (c.strong || isFooter) && "font-semibold",
+            "whitespace-nowrap"
+          )}
+        >
+          {c.cellTitle && r[c.cellTitle] ? (
+            <Tip text={String(r[c.cellTitle])}>{render(c, r[c.key])}</Tip>
+          ) : (
+            render(c, r[c.key])
+          )}
+          {c.sub && r[c.sub] && r[c.key] !== null && (
+            <div className={cn("text-xs font-normal", c.subTone ? "mt-1" : "text-zinc-400")}>
+              {c.subTone ? (
+                <span className={cn(pill, PILL[(r[c.subTone] as Tone) ?? "zinc"])}>{r[c.sub]}</span>
+              ) : /^\d{4}-\d{2}-\d{2}$/.test(String(r[c.sub])) ? (
+                fmtDay(r[c.sub] as string)
+              ) : (
+                r[c.sub]
+              )}
+            </div>
+          )}
+        </TableCell>
+      ))}
+    </TableRow>
+  );
 
   return (
     <Table>
@@ -114,6 +189,13 @@ export function SortableTable({
                   {c.label}
                   <Icon className={cn("h-3 w-3", !active && "opacity-40")} />
                 </button>
+                {c.tooltip && (
+                  <span className="ml-1 inline-flex align-middle text-zinc-400 hover:text-zinc-700">
+                    <Tip text={c.tooltip} below>
+                      <Info className="h-3.5 w-3.5" aria-label={c.tooltip} />
+                    </Tip>
+                  </span>
+                )}
               </TableHead>
             );
           })}
@@ -127,26 +209,8 @@ export function SortableTable({
             </TableCell>
           </TableRow>
         )}
-        {sorted.map((r) => (
-          <TableRow key={r.id}>
-            {columns.map((c, i) => (
-              <TableCell
-                key={c.key}
-                className={cn(
-                  isNumeric(c) && "text-right",
-                  i === 0 && "sticky left-0 bg-white font-medium",
-                  c.strong && "font-semibold",
-                  "whitespace-nowrap"
-                )}
-              >
-                {render(c, r[c.key])}
-                {c.sub && r[c.sub] && r[c.key] !== null && (
-                  <div className="text-xs font-normal text-zinc-400">{fmtDay(r[c.sub] as string)}</div>
-                )}
-              </TableCell>
-            ))}
-          </TableRow>
-        ))}
+        {sorted.map((r) => renderRow(r, false))}
+        {footer && sorted.length > 0 && renderRow(footer, true)}
       </TableBody>
     </Table>
   );

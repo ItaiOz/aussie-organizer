@@ -24,6 +24,7 @@ export type CenterMetrics = {
   bestDayDate: string | null;
   worstDay: number | null;
   worstDayDate: string | null;
+  last7: number;
   trend7: number | null;
   creditShare: number | null;
   refundRate: number | null;
@@ -68,6 +69,7 @@ export function centerMetrics(
       bestDayDate: best ? isoDay(best.date) : null,
       worstDay: worst ? net(worst) : null,
       worstDayDate: worst ? isoDay(worst.date) : null,
+      last7,
       trend7: prev7 ? (last7 - prev7) / prev7 : null,
       creditShare: cash + card ? card / (cash + card) : null,
       refundRate: cash + card ? refund / (cash + card) : null,

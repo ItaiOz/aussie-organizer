@@ -5,10 +5,30 @@ import { money, businessTodayUTC } from "@/lib/format";
 import { seasonStart, seasonEnd, addDaysUTC, weekdayLabel, DAY_MS } from "@/lib/season";
 import { SalesChart } from "./sales-chart";
 import { Kpi } from "@/components/kpi";
+import { SortableTable, type SortColumn, type SortRow } from "@/components/sortable-table";
+import { centerMetrics } from "@/lib/metrics";
 import { BreakEvenChart, BreakEvenLegend, type BreakEvenPoint } from "./break-even-chart";
 import { DollarSign, CalendarDays, Users, Trophy, Star, CalendarCheck, Award, Store } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+
+const CENTRE_COLUMNS: SortColumn[] = [
+  { key: "name", label: "Centre", kind: "text" },
+  { key: "today", label: "Today", kind: "money" },
+  { key: "yesterday", label: "Yesterday", kind: "money" },
+  { key: "week", label: "This week", kind: "money" },
+  { key: "last7", label: "Last 7 days", kind: "money", strong: true },
+  {
+    key: "trend7",
+    label: "Trend",
+    kind: "trend",
+    tooltip: "Last 7 days compared with the 7 days before. Hover a value for the amounts.",
+    cellTitle: "trendTitle",
+  },
+  { key: "avgPerDay", label: "Avg / day", kind: "money" },
+  { key: "total", label: "Season total", kind: "money" },
+  { key: "endsDate", label: "Booking ends", kind: "date", sub: "endsNote", subTone: "endsTone" },
+];
 
 // Fewer trading days than this and one big day would top the average.
 const MIN_DAYS_FOR_AVG = 3;
@@ -51,7 +71,14 @@ export default async function DashboardPage() {
     }),
     prisma.dailySale.findMany({
       where: { date: { lte: bizToday } },
-      select: { date: true, cashAmount: true, cardAmount: true, refundAmount: true },
+      select: {
+        date: true,
+        centerId: true,
+        cashAmount: true,
+        cardAmount: true,
+        refundAmount: true,
+        center: { select: { name: true, bookedTo: true } },
+      },
     }),
     prisma.expense.findMany({ where: { datePaid: { lte: bizToday } }, select: { datePaid: true, amount: true } }),
   ]);
@@ -78,6 +105,72 @@ export default async function DashboardPage() {
     cumExpenses += expensesByDay.get(key) ?? 0;
     breakEven.push({ date: key, sales: cumSales, expenses: cumExpenses });
   }
+
+  // Centre status table: centres with sales this season only
+  const sumNetOf = (rows: typeof salesToDate) => rows.reduce((t, s) => t + s.cashAmount + s.cardAmount - s.refundAmount, 0);
+  const centreInfo = new Map(salesToDate.map((s) => [s.centerId, s.center]));
+  const centreStats = centerMetrics(
+    [...centreInfo.entries()].map(([id, c]) => ({ id, name: c.name })),
+    salesToDate.map((s) => ({ ...s, expenseTotal: 0 })),
+    seasonStart(),
+    seasonEnd(),
+    bizToday
+  ).filter((m) => m.days > 0);
+  const daysLeft = (end: Date | null) => (end ? Math.round((end.getTime() - bizToday.getTime()) / DAY_MS) : null);
+  const daysLeftNote = (left: number | null) =>
+    left === null ? null : left > 1 ? `${left} days left` : left === 1 ? "1 day left" : left === 0 ? "Last day" : "Ended";
+  // Ended: grey · last 3 days: amber · otherwise blue
+  const daysLeftTone = (left: number | null) => (left === null ? null : left < 0 ? "zinc" : left <= 3 ? "amber" : "sky");
+  const last7From = addDaysUTC(bizToday, -6);
+  const prev7From = addDaysUTC(bizToday, -13);
+  const centreRows: SortRow[] = centreStats.map((m) => {
+    const own = salesToDate.filter((s) => s.centerId === m.id);
+    const end = centreInfo.get(m.id)?.bookedTo ?? null;
+    const left = daysLeft(end);
+    const prev7 = sumNetOf(own.filter((s) => s.date >= prev7From && s.date < last7From && s.date >= seasonStart()));
+    const todayNet = sumNetOf(own.filter((s) => s.date.getTime() === bizToday.getTime()));
+    const yesterdayNet = sumNetOf(own.filter((s) => s.date.getTime() === bizYesterday.getTime()));
+    return {
+      id: m.id,
+      name: m.name,
+      today: todayNet || null,
+      yesterday: yesterdayNet || null,
+      week: sumNetOf(own.filter((s) => s.date >= bizWeekStart)),
+      last7: m.last7,
+      prev7,
+      days: m.days,
+      trend7: m.trend7,
+      trendTitle:
+        m.trend7 === null
+          ? null
+          : `Last 7 days ${money(m.last7)} vs previous 7 days ${money(prev7)}`,
+      avgPerDay: m.avgPerDay,
+      total: m.total,
+      endsDate: end ? end.toISOString().slice(0, 10) : null,
+      endsNote: daysLeftNote(left),
+      endsTone: daysLeftTone(left),
+    };
+  });
+  const sumCol = (k: string) => centreRows.reduce((t, r) => t + ((r[k] as number | null) ?? 0), 0);
+  // Totals cover the centres shown
+  const allLast7 = sumCol("last7");
+  const allPrev7 = sumCol("prev7");
+  const centreDays = sumCol("days");
+  const centreFooter: SortRow = {
+    id: "total",
+    name: "Total",
+    today: sumCol("today") || null,
+    yesterday: sumCol("yesterday") || null,
+    week: sumCol("week"),
+    last7: allLast7,
+    trend7: allPrev7 ? (allLast7 - allPrev7) / allPrev7 : null,
+    trendTitle: allPrev7 ? `Last 7 days ${money(allLast7)} vs previous 7 days ${money(allPrev7)}` : null,
+    avgPerDay: centreDays ? sumCol("total") / centreDays : null,
+    total: sumCol("total"),
+    endsDate: null,
+    endsNote: null,
+    endsTone: null,
+  };
 
   // Season records
   const netOf = (r: { cashAmount: number; cardAmount: number; refundAmount: number }) =>
@@ -224,6 +317,31 @@ export default async function DashboardPage() {
             sub={topSeller ? "Monday to today" : "No sales this week yet"}
           />
         </div>
+
+        <Card className="relative mb-6 overflow-hidden">
+          <div className="absolute inset-x-0 top-0 h-1 bg-emerald-500" />
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <span className="rounded-md bg-emerald-50 p-1.5 text-emerald-600">
+                <Store className="h-4 w-4" />
+              </span>
+              Centres right now
+            </CardTitle>
+            <p className="text-xs text-zinc-500">
+              Centres with sales this season. Avg / day is the season total ÷ days traded. Click a column header to
+              sort.
+            </p>
+          </CardHeader>
+          <CardContent className="p-0">
+            <SortableTable
+              columns={CENTRE_COLUMNS}
+              rows={centreRows}
+              footer={centreFooter}
+              defaultSort={{ key: "last7", dir: "desc" }}
+              empty="No centre has sales this season yet."
+            />
+          </CardContent>
+        </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
           <Card className="lg:col-span-2">
