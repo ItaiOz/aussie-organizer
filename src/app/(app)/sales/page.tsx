@@ -255,7 +255,7 @@ export default async function SalesPage() {
             centers={centers.map((c) => ({ id: c.id, name: c.name }))}
             days={DAYS_BACK}
             middle={
-              <div className="mb-4">
+              <div key="sales-by-day" className="mb-4">
                 <SalesGrid
                   // Columns come from the sales themselves, so centres no longer booked keep their history
                   centres={[...new Map(gridSales.map((s) => [s.centerId, s.center.name])).entries()]
@@ -313,12 +313,12 @@ export default async function SalesPage() {
                     const rowTotal = Object.values(row).reduce((s, x) => s + x.net, 0);
                     return (
                       <TableRow key={c.id}>
-                        <TableCell className="sticky left-0 bg-white font-medium">{c.name}</TableCell>
+                        <TableCell className="sticky left-0 bg-white font-medium whitespace-nowrap">{c.name}</TableCell>
                         {weeks.map((w, i) => {
                           const cell = row[w.key];
                           const change = changeVsPrevWeek(i, c.id);
                           return (
-                            <TableCell key={w.key} className="text-right">
+                            <TableCell key={w.key} className="text-right whitespace-nowrap">
                               {cell.net === 0 ? (
                                 <>
                                   <span className="text-zinc-300">—</span>
@@ -337,7 +337,7 @@ export default async function SalesPage() {
                             </TableCell>
                           );
                         })}
-                        <TableCell className={"text-right font-semibold " + (rowTotal < 0 ? "text-red-600" : "")}>
+                        <TableCell className={"text-right font-semibold whitespace-nowrap " + (rowTotal < 0 ? "text-red-600" : "")}>
                           {money(rowTotal)}
                         </TableCell>
                       </TableRow>
@@ -349,7 +349,7 @@ export default async function SalesPage() {
                       {weeks.map((w, i) => {
                         const cell = weekTotals[w.key];
                         return (
-                          <TableCell key={w.key} className="text-right">
+                          <TableCell key={w.key} className="text-right whitespace-nowrap">
                             {cell.net === 0 && cell.cash === 0 && cell.card === 0 ? (
                               <span className="text-zinc-300">—</span>
                             ) : (
@@ -365,7 +365,7 @@ export default async function SalesPage() {
                           </TableCell>
                         );
                       })}
-                      <TableCell className={"text-right font-bold " + (grandTotal < 0 ? "text-red-600" : "")}>
+                      <TableCell className={"text-right font-bold whitespace-nowrap " + (grandTotal < 0 ? "text-red-600" : "")}>
                         {money(grandTotal)}
                       </TableCell>
                     </TableRow>
@@ -406,12 +406,12 @@ export default async function SalesPage() {
                   const net = s.cashAmount + s.cardAmount - s.refundAmount;
                   return (
                     <TableRow key={s.id}>
-                      <TableCell className="text-zinc-600">{fmtDate(s.date)}</TableCell>
-                      <TableCell className="font-medium">{s.center.name}</TableCell>
-                      <TableCell className="text-right">{money(s.cashAmount)}</TableCell>
-                      <TableCell className="text-right">{money(s.cardAmount)}</TableCell>
+                      <TableCell className="text-zinc-600 whitespace-nowrap">{fmtDate(s.date, "d MMM")}</TableCell>
+                      <TableCell className="font-medium whitespace-nowrap">{s.center.name}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap">{money(s.cashAmount)}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap">{money(s.cardAmount)}</TableCell>
                       <TableCell className="text-right text-red-600">{s.refundAmount > 0 ? `−${money(s.refundAmount)}` : <span className="text-zinc-300">—</span>}</TableCell>
-                      <TableCell className={"text-right font-semibold " + (net < 0 ? "text-red-600" : "")}>{money(net)}</TableCell>
+                      <TableCell className={"text-right font-semibold whitespace-nowrap " + (net < 0 ? "text-red-600" : "")}>{money(net)}</TableCell>
                       <TableCell className="text-zinc-500 text-sm">
                         {s.employeeSales.length === 0
                           ? "—"

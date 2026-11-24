@@ -91,7 +91,7 @@ export function AppShell({ username, children }: { username: string; children: R
           collapsed ? "" : "md:hidden"
         )}
       >
-        <div className="font-semibold text-zinc-900">Aussie Organizer</div>
+        <Link href="/dashboard" className="block font-semibold text-zinc-900 hover:text-zinc-600">Aussie Organizer</Link>
         <button
           onClick={() => setOpen(true)}
           aria-label="Open menu"
@@ -108,7 +108,7 @@ export function AppShell({ username, children }: { username: string; children: R
           <div className="absolute inset-y-0 left-0 w-72 max-w-[85vw] bg-white flex flex-col shadow-xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
               <div>
-                <div className="font-semibold text-zinc-900">Aussie Organizer</div>
+                <Link href="/dashboard" onClick={() => setOpen(false)} className="block font-semibold text-zinc-900 hover:text-zinc-600">Aussie Organizer</Link>
                 <div className="text-xs text-zinc-500 mt-0.5">Signed in as {username}</div>
               </div>
               <button
@@ -132,7 +132,7 @@ export function AppShell({ username, children }: { username: string; children: R
         <aside className={cn("hidden w-60 shrink-0 border-r border-zinc-200 bg-white flex-col", !collapsed && "md:flex")}>
           <div className="px-6 py-5 border-b border-zinc-200 flex items-start justify-between">
           <div>
-            <div className="font-semibold text-zinc-900">Aussie Organizer</div>
+            <Link href="/dashboard" className="block font-semibold text-zinc-900 hover:text-zinc-600">Aussie Organizer</Link>
             <div className="text-xs text-zinc-500 mt-0.5">Signed in as {username}</div>
           </div>
           <button

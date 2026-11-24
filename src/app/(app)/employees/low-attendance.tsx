@@ -36,12 +36,12 @@ export function LowAttendance({ people }: { people: { id: string; name: string; 
           <ul className="space-y-2">
             {people.map((p) => (
               <li key={p.id} className="flex flex-wrap items-start gap-x-3 gap-y-1.5">
-                <span className="w-40 shrink-0 pt-1 text-sm font-medium text-zinc-900">{p.name}</span>
+                <span className="w-full shrink-0 text-sm font-medium text-zinc-900 sm:w-40 sm:pt-1">{p.name}</span>
                 <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
                   {p.weeks.map((w) => (
                     <span
                       key={w.weekStart}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700"
+                      className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700"
                     >
                       {w.current ? "This week" : weekLabel(w.weekStart)}
                       <span className="font-normal opacity-80">

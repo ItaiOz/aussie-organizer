@@ -1,4 +1,5 @@
 "use client";
+import { useSyncExternalStore } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -11,12 +12,22 @@ import {
 } from "recharts";
 import { money } from "@/lib/format";
 
-// Vertical bars, largest first, one value per label (expense categories, salespeople).
+// Ranked bars, largest first, one value per label (expense categories, salespeople).
+// Vertical bars on wider screens, horizontal on phones.
 // One hue per chart; paired charts use validated slots 1 and 2 so they read as different measures.
 const COLORS = { blue: "#2a78d6", orange: "#eb6834" } as const;
 const MAX_CHARS = 10;
 
 type Row = { name: string; value: number };
+
+// Phones get horizontal bars: names on the left read better than 8 squeezed labels.
+const PHONE = "(max-width: 639px)";
+const subscribe = (cb: () => void) => {
+  const mq = window.matchMedia(PHONE);
+  mq.addEventListener("change", cb);
+  return () => mq.removeEventListener("change", cb);
+};
+const usePhone = () => useSyncExternalStore(subscribe, () => window.matchMedia(PHONE).matches, () => false);
 
 const fmt = (kind: "money" | "percent", v: number) =>
   kind === "money" ? money(v) : `${(v * 100).toFixed(v < 0.1 ? 1 : 0)}%`;
@@ -111,8 +122,45 @@ export function RankedBarChart({
   const rows = data
     .filter((d) => d.value > 0)
     .sort((a, b) => b.value - a.value);
+  const phone = usePhone();
   if (rows.length === 0)
     return <p className="text-sm text-zinc-500">Nothing to show yet.</p>;
+  const tooltip = (
+    <Tooltip
+      cursor={{ fill: "#f4f4f5" }}
+      contentStyle={{ borderRadius: 8, border: "1px solid #e4e4e7", fontSize: 12 }}
+      formatter={(v) => [fmt(kind, Number(v)), label]}
+    />
+  );
+  if (phone) {
+    return (
+      <div style={{ height: rows.length * 34 + 16 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={rows} layout="vertical" margin={{ top: 0, right: 84, left: 0, bottom: 0 }} barCategoryGap="20%">
+            <XAxis type="number" hide />
+            <YAxis
+              type="category"
+              dataKey="name"
+              width={112}
+              interval={0}
+              tick={{ fontSize: 11, fill: "#52525b" }}
+              axisLine={false}
+              tickLine={false}
+            />
+            {tooltip}
+            <Bar dataKey="value" fill={COLORS[color]} radius={[0, 4, 4, 0]}>
+              <LabelList
+                dataKey="value"
+                position="right"
+                formatter={(v) => fmt(kind, Number(v))}
+                style={{ fontSize: 11, fill: "#3f3f46" }}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
   return (
     <div className="h-80">
       <ResponsiveContainer width="100%" height="100%">
@@ -141,15 +189,7 @@ export function RankedBarChart({
             tickLine={false}
             width={48}
           />
-          <Tooltip
-            cursor={{ fill: "#f4f4f5" }}
-            contentStyle={{
-              borderRadius: 8,
-              border: "1px solid #e4e4e7",
-              fontSize: 12,
-            }}
-            formatter={(v) => [fmt(kind, Number(v)), label]}
-          />
+          {tooltip}
           <Bar dataKey="value" fill={COLORS[color]} radius={[4, 4, 0, 0]}>
             <LabelList
               dataKey="value"

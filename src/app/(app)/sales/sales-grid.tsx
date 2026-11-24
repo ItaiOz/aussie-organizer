@@ -179,7 +179,8 @@ export function SalesGrid({
         {cols.length === 0 ? (
           <p className="px-6 pb-6 text-sm text-zinc-500">No sales in this range.</p>
         ) : (
-          <Table>
+          // Tighter cells on phones so more centres fit; normal spacing from the sm breakpoint up
+          <Table className="[&_td]:px-3 [&_td]:py-2 [&_th]:px-3 sm:[&_td]:p-4 sm:[&_th]:px-4">
             <TableHeader>
               <TableRow>
                 <TableHead className="sticky left-0 z-10 bg-white">Date</TableHead>
