@@ -121,6 +121,15 @@ export function SaleFormDialog({ centers, employees }: { centers: Center[]; empl
                 toast.error("Pick a center");
                 return;
               }
+              // Same rules as the staff screen: a chosen salesperson needs an amount ($0 is allowed)
+              if (rows.some((r) => r.employeeId && r.amount.trim() === "")) {
+                toast.error("Enter an amount for each salesperson ($0 is fine)");
+                return;
+              }
+              if (rows.some((r) => !r.employeeId && r.amount.trim() !== "")) {
+                toast.error("Pick a salesperson for each amount");
+                return;
+              }
               const res = await saveDailySale({
                 centerId,
                 date,
@@ -129,7 +138,7 @@ export function SaleFormDialog({ centers, employees }: { centers: Center[]; empl
                 refundAmount: Number(refund || 0),
                 notes: notes.trim() || null,
                 employeeSales: rows
-                  .filter((r) => r.employeeId && Number(r.amount || 0) > 0)
+                  .filter((r) => r.employeeId)
                   .map((r) => ({ employeeId: r.employeeId, amount: Number(r.amount) })),
               });
               if (res.ok) {

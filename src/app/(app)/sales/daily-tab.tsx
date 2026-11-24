@@ -1,10 +1,8 @@
 "use client";
 import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { money } from "@/lib/format";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from "recharts";
 import { format } from "date-fns";
 
@@ -16,7 +14,7 @@ type CenterCell = { cash: number; card: number; refund: number; net: number };
 type DailyRow = { date: string; label: string; perCenter: Record<string, CenterCell> };
 type Center = { id: string; name: string };
 
-// Chart and daily table share one center picker; `middle` renders between them.
+// Daily net sales chart with a center picker; `middle` renders below it.
 export function DailyTab({
   rows,
   centers,
@@ -49,25 +47,6 @@ export function DailyTab({
     return ordered.map((r) => ({ date: r.date, [centerId]: r.perCenter[centerId]?.net ?? 0 }));
   }, [rows, centers, centerId]);
 
-  // Build table data (newest first)
-  const tableRows = useMemo(() => {
-    return rows.map((r) => {
-      if (centerId === ALL) {
-        const totals = Object.values(r.perCenter).reduce(
-          (a, b) => ({
-            cash: a.cash + b.cash,
-            card: a.card + b.card,
-            refund: a.refund + b.refund,
-            net: a.net + b.net,
-          }),
-          { cash: 0, card: 0, refund: 0, net: 0 }
-        );
-        return { date: r.date, label: r.label, ...totals };
-      }
-      const c = r.perCenter[centerId] ?? { cash: 0, card: 0, refund: 0, net: 0 };
-      return { date: r.date, label: r.label, ...c };
-    });
-  }, [rows, centerId]);
 
   const renderedCenters = centerId === ALL ? centers : centers.filter((c) => c.id === centerId);
 
@@ -139,41 +118,6 @@ export function DailyTab({
       </Card>
 
       {middle}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            Daily breakdown — last {days} days
-            {centerId !== ALL && ` · ${centers.find((c) => c.id === centerId)?.name ?? ""}`}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0 overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead className="text-right">Cash</TableHead>
-                <TableHead className="text-right">Card</TableHead>
-                <TableHead className="text-right">Refund</TableHead>
-                <TableHead className="text-right">Net</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {tableRows.map((d) => (
-                <TableRow key={d.date}>
-                  <TableCell className="font-medium">{d.label}</TableCell>
-                  <TableCell className="text-right">{d.cash === 0 ? <span className="text-zinc-300">—</span> : money(d.cash)}</TableCell>
-                  <TableCell className="text-right">{d.card === 0 ? <span className="text-zinc-300">—</span> : money(d.card)}</TableCell>
-                  <TableCell className="text-right text-red-600">{d.refund === 0 ? <span className="text-zinc-300">—</span> : `−${money(d.refund)}`}</TableCell>
-                  <TableCell className={"text-right font-semibold " + (d.net < 0 ? "text-red-600" : d.net === 0 ? "text-zinc-300" : "")}>
-                    {d.net === 0 ? "—" : money(d.net)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
     </>
   );
 }

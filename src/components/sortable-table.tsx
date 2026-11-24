@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Info } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { money } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Tip } from "@/components/tip";
 
 type Value = string | number | null;
 export type SortRow = { id: string } & Record<string, Value>;
@@ -36,26 +37,6 @@ const PILL: Record<Tone, string> = {
   zinc: "bg-zinc-100 text-zinc-600",
 };
 const pill = "inline-block text-xs font-medium px-2 py-0.5 rounded-full";
-
-// Shows instantly on hover, and on tap/focus (phones and keyboard). `below` for headers,
-// where a bubble above would be cut off by the table's top edge.
-function Tip({ text, below, children }: { text: string; below?: boolean; children: React.ReactNode }) {
-  return (
-    <span tabIndex={0} className="group relative inline-flex cursor-help outline-none">
-      {children}
-      <span
-        role="tooltip"
-        className={cn(
-          "pointer-events-none invisible absolute right-0 z-20 w-max max-w-64 whitespace-normal rounded-md bg-zinc-900 px-2.5 py-1.5 text-left text-xs font-normal normal-case tracking-normal text-white opacity-0 shadow-lg transition-opacity",
-          "group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100",
-          below ? "top-full mt-1.5" : "bottom-full mb-1.5"
-        )}
-      >
-        {text}
-      </span>
-    </span>
-  );
-}
 
 const fmtDay = (iso: string) =>
   new Date(iso).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
@@ -145,7 +126,7 @@ export function SortableTable({
           )}
         >
           {c.cellTitle && r[c.cellTitle] ? (
-            <Tip text={String(r[c.cellTitle])}>{render(c, r[c.key])}</Tip>
+            <Tip content={String(r[c.cellTitle])}>{render(c, r[c.key])}</Tip>
           ) : (
             render(c, r[c.key])
           )}
@@ -191,7 +172,7 @@ export function SortableTable({
                 </button>
                 {c.tooltip && (
                   <span className="ml-1 inline-flex align-middle text-zinc-400 hover:text-zinc-700">
-                    <Tip text={c.tooltip} below>
+                    <Tip content={c.tooltip} below>
                       <Info className="h-3.5 w-3.5" aria-label={c.tooltip} />
                     </Tip>
                   </span>

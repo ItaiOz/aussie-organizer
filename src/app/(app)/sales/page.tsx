@@ -10,6 +10,7 @@ import { DollarSign, CalendarDays, Store, CreditCard } from "lucide-react";
 import { subDays, startOfDay, format } from "date-fns";
 import { SaleFormDialog } from "./sale-form-dialog";
 import { DailyTab } from "./daily-tab";
+import { SalesGrid } from "./sales-grid";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,8 @@ export default async function SalesPage() {
   const oldestDay = startOfDay(subDays(now, DAYS_BACK - 1));
   const oldestStart = oldestDay < oldestWeekStart ? oldestDay : oldestWeekStart;
 
-  const [recent, employees, centers, weeklySales] = await Promise.all([
+  const gridFrom = new Date(Date.UTC(businessTodayUTC().getUTCFullYear(), 0, 1));
+  const [recent, employees, centers, weeklySales, gridSales] = await Promise.all([
     prisma.dailySale.findMany({
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
       include: { center: true, employeeSales: { include: { employee: true } }, saleExpenses: true },
@@ -54,6 +56,21 @@ export default async function SalesPage() {
         cardAmount: true,
         refundAmount: true,
         saleExpenses: { select: { amount: true } },
+      },
+    }),
+    // Year to date with full details, for the "Sales by day" grid and its hover details
+    prisma.dailySale.findMany({
+      where: { date: { gte: gridFrom, lte: businessTodayUTC() } },
+      select: {
+        date: true,
+        centerId: true,
+        cashAmount: true,
+        cardAmount: true,
+        refundAmount: true,
+        notes: true,
+        center: { select: { name: true } },
+        employeeSales: { select: { amount: true, employee: { select: { fullName: true } } } },
+        saleExpenses: { select: { title: true, amount: true } },
       },
     }),
   ]);
@@ -122,6 +139,36 @@ export default async function SalesPage() {
     }
   }
   const grandTotal = Object.values(weekTotals).reduce((s, x) => s + x.net, 0);
+
+  // Change vs the week before, per centre (or all centres when centerId is null). The week in
+  // progress is compared with the same days of the previous week, so it isn't cut short.
+  const todayBiz = businessTodayUTC();
+  const netBetween = (from: Date, to: Date, centerId: string | null) =>
+    weeklySales
+      .filter((s) => s.date >= from && s.date <= to && (centerId === null || s.centerId === centerId))
+      .reduce((t, s) => t + s.cashAmount + s.cardAmount - s.refundAmount, 0);
+  const changeVsPrevWeek = (i: number, centerId: string | null) => {
+    const w = weeks[i];
+    if (i === 0 || w.start > todayBiz) return null;
+    const curEnd = w.end < todayBiz ? w.end : todayBiz;
+    const span = Math.round((curEnd.getTime() - w.start.getTime()) / (24 * 60 * 60 * 1000));
+    const prevStart = weeks[i - 1].start;
+    const cur = netBetween(w.start, curEnd, centerId);
+    const prev = netBetween(prevStart, addDaysUTC(prevStart, span), centerId);
+    if (cur === 0 && prev === 0) return null;
+    return { diff: cur - prev, pct: prev ? (cur - prev) / prev : null, partial: curEnd < w.end, prevLabel: weeks[i - 1].label };
+  };
+  const changeLine = (c: ReturnType<typeof changeVsPrevWeek>) =>
+    c && (
+      <div
+        className={"text-xs font-medium " + (c.diff >= 0 ? "text-green-700" : "text-red-600")}
+        title={c.partial ? "vs the same days of the week before" : `vs ${c.prevLabel}`}
+      >
+        {c.diff >= 0 ? "+" : "−"}
+        {money(Math.abs(c.diff))}
+        {c.pct !== null ? ` (${c.diff >= 0 ? "+" : "−"}${Math.abs(c.pct * 100).toFixed(0)}%)` : " (new)"}
+      </div>
+    );
 
   // Daily aggregation, keyed by date with per-center breakdown
   type CenterCell = { cash: number; card: number; refund: number; net: number };
@@ -209,94 +256,124 @@ export default async function SalesPage() {
             days={DAYS_BACK}
             middle={
               <div className="mb-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>
-                      Sales by center, by week ({dayLabel(weeks[0].start)} – {dayLabel(weeks[weeks.length - 1].end)})
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0 overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="sticky left-0 bg-white">Center</TableHead>
-                          {weeks.map((w) => (
-                            <TableHead key={w.key} className="text-right whitespace-nowrap">{w.label}</TableHead>
-                          ))}
-                          <TableHead className="text-right whitespace-nowrap">Total</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {centers.length === 0 && (
-                          <TableRow>
-                            <TableCell colSpan={weeks.length + 2} className="text-center text-zinc-500 py-12">
-                              No booked centers yet.
-                            </TableCell>
-                          </TableRow>
-                        )}
-                        {centers.map((c) => {
-                          const row = byCenter[c.id];
-                          const rowTotal = Object.values(row).reduce((s, x) => s + x.net, 0);
-                          return (
-                            <TableRow key={c.id}>
-                              <TableCell className="sticky left-0 bg-white font-medium">{c.name}</TableCell>
-                              {weeks.map((w) => {
-                                const cell = row[w.key];
-                                return (
-                                  <TableCell key={w.key} className="text-right">
-                                    {cell.net === 0 ? (
-                                      <span className="text-zinc-300">—</span>
-                                    ) : (
-                                      <div>
-                                        <div className={"font-medium " + (cell.net < 0 ? "text-red-600" : "")}>{money(cell.net)}</div>
-                                        <div className="text-xs text-zinc-400">
-                                          C {money(cell.cash)} · Cr {money(cell.card)}
-                                          {cell.refund > 0 && <> · −{money(cell.refund)}</>}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </TableCell>
-                                );
-                              })}
-                              <TableCell className={"text-right font-semibold " + (rowTotal < 0 ? "text-red-600" : "")}>
-                                {money(rowTotal)}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                        {centers.length > 0 && (
-                          <TableRow className="border-t-2 border-zinc-300 bg-zinc-50">
-                            <TableCell className="sticky left-0 bg-zinc-50 font-semibold">Total</TableCell>
-                            {weeks.map((w) => {
-                              const cell = weekTotals[w.key];
-                              return (
-                                <TableCell key={w.key} className="text-right">
-                                  {cell.net === 0 && cell.cash === 0 && cell.card === 0 ? (
-                                    <span className="text-zinc-300">—</span>
-                                  ) : (
-                                    <div>
-                                      <div className={"font-semibold " + (cell.net < 0 ? "text-red-600" : "")}>{money(cell.net)}</div>
-                                      <div className="text-xs text-zinc-400">
-                                        C {money(cell.cash)} · Cr {money(cell.card)}
-                                        {cell.refund > 0 && <> · −{money(cell.refund)}</>}
-                                      </div>
-                                    </div>
-                                  )}
-                                </TableCell>
-                              );
-                            })}
-                            <TableCell className={"text-right font-bold " + (grandTotal < 0 ? "text-red-600" : "")}>
-                              {money(grandTotal)}
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
+                <SalesGrid
+                  // Columns come from the sales themselves, so centres no longer booked keep their history
+                  centres={[...new Map(gridSales.map((s) => [s.centerId, s.center.name])).entries()]
+                    .map(([id, name]) => ({ id, name }))
+                    .sort((a, b) => a.name.localeCompare(b.name))}
+                  entries={gridSales.map((s) => ({
+                    date: s.date.toISOString().slice(0, 10),
+                    centerId: s.centerId,
+                    cash: s.cashAmount,
+                    card: s.cardAmount,
+                    refund: s.refundAmount,
+                    notes: s.notes,
+                    sellers: s.employeeSales
+                      .map((es) => ({ name: es.employee.fullName, amount: es.amount }))
+                      .sort((a, b) => b.amount - a.amount),
+                    expenses: s.saleExpenses.map((x) => ({ title: x.title, amount: x.amount })),
+                  }))}
+                  today={today.toISOString().slice(0, 10)}
+                  weekStart={addDaysUTC(today, -((today.getUTCDay() + 6) % 7)).toISOString().slice(0, 10)}
+                  seasonStart={seasonStart().toISOString().slice(0, 10)}
+                />
               </div>
             }
           />
+        </div>
+
+        <div className="mb-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                Sales by center, by week ({dayLabel(weeks[0].start)} – {dayLabel(weeks[weeks.length - 1].end)})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="sticky left-0 bg-white">Center</TableHead>
+                    {weeks.map((w) => (
+                      <TableHead key={w.key} className="text-right whitespace-nowrap">{w.label}</TableHead>
+                    ))}
+                    <TableHead className="text-right whitespace-nowrap">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {centers.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={weeks.length + 2} className="text-center text-zinc-500 py-12">
+                        No booked centers yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {centers.map((c) => {
+                    const row = byCenter[c.id];
+                    const rowTotal = Object.values(row).reduce((s, x) => s + x.net, 0);
+                    return (
+                      <TableRow key={c.id}>
+                        <TableCell className="sticky left-0 bg-white font-medium">{c.name}</TableCell>
+                        {weeks.map((w, i) => {
+                          const cell = row[w.key];
+                          const change = changeVsPrevWeek(i, c.id);
+                          return (
+                            <TableCell key={w.key} className="text-right">
+                              {cell.net === 0 ? (
+                                <>
+                                  <span className="text-zinc-300">—</span>
+                                  {changeLine(change)}
+                                </>
+                              ) : (
+                                <div>
+                                  <div className={"font-medium " + (cell.net < 0 ? "text-red-600" : "")}>{money(cell.net)}</div>
+                                  <div className="text-xs text-zinc-400">
+                                    C {money(cell.cash)} · Cr {money(cell.card)}
+                                    {cell.refund > 0 && <> · −{money(cell.refund)}</>}
+                                  </div>
+                                  {changeLine(change)}
+                                </div>
+                              )}
+                            </TableCell>
+                          );
+                        })}
+                        <TableCell className={"text-right font-semibold " + (rowTotal < 0 ? "text-red-600" : "")}>
+                          {money(rowTotal)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {centers.length > 0 && (
+                    <TableRow className="border-t-2 border-zinc-300 bg-zinc-50">
+                      <TableCell className="sticky left-0 bg-zinc-50 font-semibold">Total</TableCell>
+                      {weeks.map((w, i) => {
+                        const cell = weekTotals[w.key];
+                        return (
+                          <TableCell key={w.key} className="text-right">
+                            {cell.net === 0 && cell.cash === 0 && cell.card === 0 ? (
+                              <span className="text-zinc-300">—</span>
+                            ) : (
+                              <div>
+                                <div className={"font-semibold " + (cell.net < 0 ? "text-red-600" : "")}>{money(cell.net)}</div>
+                                <div className="text-xs text-zinc-400">
+                                  C {money(cell.cash)} · Cr {money(cell.card)}
+                                  {cell.refund > 0 && <> · −{money(cell.refund)}</>}
+                                </div>
+                                {changeLine(changeVsPrevWeek(i, null))}
+                              </div>
+                            )}
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell className={"text-right font-bold " + (grandTotal < 0 ? "text-red-600" : "")}>
+                        {money(grandTotal)}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         </div>
 
         <Card>

@@ -42,3 +42,8 @@ export function dateOnlyUTC(s: string) {
 export function businessTodayUTC() {
   return dateOnlyUTC(new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Brisbane" }).format(new Date()));
 }
+
+// Current hour (0-23) in Brisbane.
+export function businessHour() {
+  return Number(new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Brisbane", hour: "numeric", hourCycle: "h23" }).format(new Date()));
+}

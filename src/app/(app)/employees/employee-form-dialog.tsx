@@ -63,6 +63,7 @@ export function EmployeeFormDialog() {
                 <SelectContent>
                   <SelectItem value="employee">Employee</SelectItem>
                   <SelectItem value="region_manager">Region manager</SelectItem>
+                  <SelectItem value="owner">Owner</SelectItem>
                 </SelectContent>
               </Select>
             </div>

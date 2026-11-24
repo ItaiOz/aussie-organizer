@@ -1,14 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader, PageBody } from "@/components/page-header";
-import { money, businessTodayUTC } from "@/lib/format";
+import { money, businessTodayUTC, businessHour } from "@/lib/format";
 import { seasonStart, seasonEnd, addDaysUTC, weekdayLabel, DAY_MS } from "@/lib/season";
 import { SalesChart } from "./sales-chart";
 import { Kpi } from "@/components/kpi";
 import { SortableTable, type SortColumn, type SortRow } from "@/components/sortable-table";
-import { centerMetrics } from "@/lib/metrics";
+import { centerMetrics, reportStatus, REPORT_DUE_HOUR } from "@/lib/metrics";
+import { DailyReports } from "./daily-reports";
 import { BreakEvenChart, BreakEvenLegend, type BreakEvenPoint } from "./break-even-chart";
-import { DollarSign, CalendarDays, Users, Trophy, Star, CalendarCheck, Award, Store } from "lucide-react";
+import { DollarSign, CalendarDays, Trophy, Star, CalendarCheck, Award, Store } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,7 @@ export default async function DashboardPage() {
   const seasonTo = seasonEnd() < bizToday ? seasonEnd() : bizToday;
   const last30 = addDaysUTC(bizToday, -29); // 30 days including today
 
-  const [compareSales, allSales30, centers, activeEmployees, seasonSales, weekSellerSales, salesToDate, expensesToDate] = await Promise.all([
+  const [compareSales, allSales30, centers, seasonSales, weekSellerSales, salesToDate, expensesToDate, bookedCentres] = await Promise.all([
     prisma.dailySale.findMany({
       where: { date: { gte: lastWeekStart, lte: bizToday } },
       select: { date: true, cashAmount: true, cardAmount: true, refundAmount: true },
@@ -60,7 +61,6 @@ export default async function DashboardPage() {
       orderBy: { date: "asc" },
     }),
     prisma.shoppingCenter.findMany({ where: { status: "booked" } }),
-    prisma.employee.count({ where: { status: "active" } }),
     prisma.dailySale.findMany({
       where: { date: { gte: seasonStart(), lte: seasonTo } },
       select: { date: true, cashAmount: true, cardAmount: true, refundAmount: true, center: { select: { name: true } } },
@@ -81,7 +81,25 @@ export default async function DashboardPage() {
       },
     }),
     prisma.expense.findMany({ where: { datePaid: { lte: bizToday } }, select: { datePaid: true, amount: true } }),
+    prisma.shoppingCenter.findMany({
+      where: { status: "booked" },
+      select: { id: true, name: true, bookedFrom: true, bookedTo: true, sales: { select: { date: true } } },
+    }),
   ]);
+
+  // Daily reports: which booked centres haven't reported (today counts from 6pm Brisbane)
+  const hourNow = businessHour();
+  const reports = reportStatus(
+    bookedCentres.map((c) => ({
+      id: c.id,
+      name: c.name,
+      bookedFrom: c.bookedFrom,
+      bookedTo: c.bookedTo,
+      reported: new Set(c.sales.map((s) => s.date.toISOString().slice(0, 10))),
+    })),
+    bizToday,
+    hourNow
+  );
 
   // Break-even: running totals across the season. Expenses paid before the season
   // (mostly stock) are the starting point; days after today are left empty.
@@ -128,13 +146,14 @@ export default async function DashboardPage() {
     const end = centreInfo.get(m.id)?.bookedTo ?? null;
     const left = daysLeft(end);
     const prev7 = sumNetOf(own.filter((s) => s.date >= prev7From && s.date < last7From && s.date >= seasonStart()));
-    const todayNet = sumNetOf(own.filter((s) => s.date.getTime() === bizToday.getTime()));
-    const yesterdayNet = sumNetOf(own.filter((s) => s.date.getTime() === bizYesterday.getTime()));
+    // "—" means no report; a report with no sales shows $0.00
+    const todayRows = own.filter((s) => s.date.getTime() === bizToday.getTime());
+    const yesterdayRows = own.filter((s) => s.date.getTime() === bizYesterday.getTime());
     return {
       id: m.id,
       name: m.name,
-      today: todayNet || null,
-      yesterday: yesterdayNet || null,
+      today: todayRows.length ? sumNetOf(todayRows) : null,
+      yesterday: yesterdayRows.length ? sumNetOf(yesterdayRows) : null,
       week: sumNetOf(own.filter((s) => s.date >= bizWeekStart)),
       last7: m.last7,
       prev7,
@@ -159,8 +178,8 @@ export default async function DashboardPage() {
   const centreFooter: SortRow = {
     id: "total",
     name: "Total",
-    today: sumCol("today") || null,
-    yesterday: sumCol("yesterday") || null,
+    today: centreRows.some((r) => r.today !== null) ? sumCol("today") : null,
+    yesterday: centreRows.some((r) => r.yesterday !== null) ? sumCol("yesterday") : null,
     week: sumCol("week"),
     last7: allLast7,
     trend7: allPrev7 ? (allLast7 - allPrev7) / allPrev7 : null,
@@ -250,6 +269,8 @@ export default async function DashboardPage() {
             ? "Merry Christmas!"
             : `${daysToChristmas} day${daysToChristmas === 1 ? "" : "s"} until Christmas`}
         </div>
+
+        <DailyReports status={reports} afterDue={hourNow >= REPORT_DUE_HOUR} />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           <Kpi
             label="Sales today"
@@ -268,11 +289,18 @@ export default async function DashboardPage() {
             change={{ value: change(weekTotal, lastWeekTotal), vs: `last week (Mon–${sameDayName})` }}
             sub={`Last week Mon–${sameDayName} ${money(lastWeekTotal)} · ${money(weekCash)} cash · ${money(weekCredit)} credit`}
           />
-          <Kpi label="Active employees" value={String(activeEmployees)} icon={Users} />
+          <Kpi
+            label="Top salesperson this week"
+            tone="rose"
+            icon={Award}
+            compact
+            value={topSeller ? `${topSeller[0]} · ${money(topSeller[1])}` : "—"}
+            sub={topSeller ? "Monday to today" : "No sales this week yet"}
+          />
         </div>
 
         <h2 className="text-sm font-semibold text-zinc-700 mb-3">This season</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <Kpi
             label="Best center so far"
             tone="emerald"
@@ -307,14 +335,6 @@ export default async function DashboardPage() {
                 ? `${weekdayLabel(bestCombined.date)} · ${bestCombined.centers} center${bestCombined.centers === 1 ? "" : "s"}`
                 : "No sales yet"
             }
-          />
-          <Kpi
-            label="Top salesperson this week"
-            tone="rose"
-            icon={Award}
-            compact
-            value={topSeller ? `${topSeller[0]} · ${money(topSeller[1])}` : "—"}
-            sub={topSeller ? "Monday to today" : "No sales this week yet"}
           />
         </div>
 

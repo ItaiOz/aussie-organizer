@@ -42,7 +42,7 @@ model ShoppingCenter {
 model Employee {
   id                  String   @id @default(cuid())
   fullName            String
-  role                String   @default("employee") // employee | region_manager
+  role                String   @default("employee") // employee | region_manager | owner
   payout              Float    @default(0)
   status              String   @default("active") // active | inactive
   apartmentAssignments ApartmentAssignment[]
