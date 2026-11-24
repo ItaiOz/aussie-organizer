@@ -6,7 +6,8 @@ import { REPORT_DUE_HOUR, type ReportStatus } from "@/lib/metrics";
 const fmtDay = (iso: string) =>
   new Date(iso).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 
-const chip = "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium";
+// Chips never break a name across lines; they wrap as whole chips instead
+const chip = "inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-1 text-xs font-medium";
 const TODAY_CHIP = {
   reported: "border-emerald-200 bg-emerald-50 text-emerald-800",
   missing: "border-red-200 bg-red-50 text-red-700",
@@ -14,7 +15,9 @@ const TODAY_CHIP = {
   waiting: "border-sky-200 bg-sky-50 text-sky-800",
 } as const;
 const TODAY_NOTE = { reported: "✓", missing: "missing", waiting: "" } as const;
-const rowLabel = "w-16 shrink-0 pt-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500";
+// Label above its chips on phones, in a left column from the sm breakpoint up
+const row = "space-y-2 sm:grid sm:grid-cols-[7.5rem_1fr] sm:gap-3 sm:space-y-0";
+const rowLabel = "block text-[11px] font-semibold uppercase tracking-wide text-zinc-500 sm:pt-1.5";
 
 // Every centre open today with its report status, plus earlier booked days with no report.
 export function DailyReports({ status, afterDue }: { status: ReportStatus; afterDue: boolean }) {
@@ -44,37 +47,39 @@ export function DailyReports({ status, afterDue }: { status: ReportStatus; after
           </div>
         </div>
 
-        <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-          <span className={cn(rowLabel, !afterDue && "w-auto")}>{afterDue ? "Today" : "Working today"}</span>
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-            {status.today.map((c) => (
-              <span key={c.id} className={cn(chip, TODAY_CHIP[c.state])}>
-                {c.name}
-                {TODAY_NOTE[c.state] && <span className="font-normal opacity-80">{TODAY_NOTE[c.state]}</span>}
-              </span>
-            ))}
-            {total === 0 && <span className="pt-1 text-xs text-zinc-500">No centres booked today</span>}
-          </div>
-          {total > 0 && (
-            <div className="flex items-center gap-2 pt-1 text-xs text-zinc-500">
-              <span className="tabular-nums">
-                {done} of {total} reported
-                {!afterDue && done < total && ` · due ${REPORT_DUE_HOUR - 12}pm`}
-              </span>
-              <span className="h-1.5 w-20 overflow-hidden rounded-full bg-zinc-100">
-                <span
-                  className={cn("block h-full rounded-full", done === total ? "bg-emerald-500" : "bg-sky-500")}
-                  style={{ width: `${(done / total) * 100}%` }}
-                />
-              </span>
+        <div className={row}>
+          <span className={rowLabel}>{afterDue ? "Today" : "Working today"}</span>
+          <div className="min-w-0 space-y-2">
+            <div className="flex flex-wrap gap-2">
+              {status.today.map((c) => (
+                <span key={c.id} className={cn(chip, TODAY_CHIP[c.state])}>
+                  {c.name}
+                  {TODAY_NOTE[c.state] && <span className="font-normal opacity-80">{TODAY_NOTE[c.state]}</span>}
+                </span>
+              ))}
+              {total === 0 && <span className="pt-1 text-xs text-zinc-500">No centres booked today</span>}
             </div>
-          )}
+            {total > 0 && (
+              <div className="flex items-center gap-2 text-xs text-zinc-500">
+                <span className="tabular-nums">
+                  {done} of {total} reported
+                  {!afterDue && done < total && ` · due ${REPORT_DUE_HOUR - 12}pm`}
+                </span>
+                <span className="h-1.5 w-20 overflow-hidden rounded-full bg-zinc-100">
+                  <span
+                    className={cn("block h-full rounded-full", done === total ? "bg-emerald-500" : "bg-sky-500")}
+                    style={{ width: `${(done / total) * 100}%` }}
+                  />
+                </span>
+              </div>
+            )}
+          </div>
         </div>
 
         {status.earlier.length > 0 && (
-          <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+          <div className={row}>
             <span className={rowLabel}>Earlier</span>
-            <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+            <div className="flex min-w-0 flex-wrap gap-2">
               {status.earlier.flatMap((c) =>
                 c.dates.map((d) => (
                   <span key={`${c.id}-${d}`} className={cn(chip, "border-red-200 bg-white text-red-700")}>
