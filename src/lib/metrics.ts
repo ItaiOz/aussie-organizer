@@ -188,7 +188,13 @@ export const MAX_DAYS_OFF = 1;
 
 export type LowWeek = { weekStart: string; worked: number; off: number; current: boolean };
 
-export function lowAttendanceWeeks(sales: { employeeId: string; date: Date }[], today: Date): Record<string, LowWeek[]> {
+// `periods` (optional) limits each person to their work period: nothing before their start
+// date or after their end date counts (e.g. someone who finished working).
+export function lowAttendanceWeeks(
+  sales: { employeeId: string; date: Date }[],
+  today: Date,
+  periods: Record<string, { start: Date | null; end: Date | null }> = {}
+): Record<string, LowWeek[]> {
   const mondayOf = (d: Date) => addDaysUTC(d, -((d.getUTCDay() + 6) % 7));
   const yesterday = addDaysUTC(today, -1);
   const daysByPerson = new Map<string, Set<string>>();
@@ -201,13 +207,15 @@ export function lowAttendanceWeeks(sales: { employeeId: string; date: Date }[], 
 
   const out: Record<string, LowWeek[]> = {};
   for (const [id, days] of daysByPerson) {
-    const first = new Date([...days].sort()[0]);
+    const period = periods[id];
+    const first = period?.start ?? new Date([...days].sort()[0]);
+    const last = period?.end && period.end < yesterday ? period.end : yesterday;
     const weeks: LowWeek[] = [];
-    for (let mon = mondayOf(first); mon <= yesterday; mon = addDaysUTC(mon, 7)) {
-      // Days of this week that count: from the first day worked, up to yesterday
+    for (let mon = mondayOf(first); mon <= last; mon = addDaysUTC(mon, 7)) {
+      // Days of this week that count: within the work period, up to yesterday
       const from = mon < first ? first : mon;
       const sun = addDaysUTC(mon, 6);
-      const to = sun < yesterday ? sun : yesterday;
+      const to = sun < last ? sun : last;
       let worked = 0;
       let counted = 0;
       for (let d = from; d <= to; d = addDaysUTC(d, 1)) {
@@ -215,9 +223,41 @@ export function lowAttendanceWeeks(sales: { employeeId: string; date: Date }[], 
         if (days.has(isoDay(d))) worked++;
       }
       const off = counted - worked;
-      if (off > MAX_DAYS_OFF) weeks.push({ weekStart: isoDay(mon), worked, off, current: to < sun });
+      if (off > MAX_DAYS_OFF) weeks.push({ weekStart: isoDay(mon), worked, off, current: to < sun && to === yesterday });
     }
     if (weeks.length) out[id] = weeks.reverse();
   }
   return out;
+}
+
+// End-of-day expenses: what staff enter on their daily reports (paid from the day's cash),
+// rolled up into one line per Monday–Sunday week across all centres. Calculated on every page
+// load, so new, edited or late entries always show; dated the week's Sunday.
+export const END_OF_DAY_CATEGORY = "End-of-day expenses";
+
+export type EndOfDayWeek = {
+  weekStart: Date;
+  weekEnd: Date;
+  amount: number;
+  byCentre: { centre: string; amount: number }[];
+  inProgress: boolean;
+};
+
+export function endOfDayWeeks(items: { date: Date; centre: string; amount: number }[], today: Date): EndOfDayWeek[] {
+  const weeks = new Map<string, EndOfDayWeek>();
+  for (const it of items) {
+    const mon = addDaysUTC(it.date, -((it.date.getUTCDay() + 6) % 7));
+    const key = isoDay(mon);
+    const w = weeks.get(key) ?? { weekStart: mon, weekEnd: addDaysUTC(mon, 6), amount: 0, byCentre: [], inProgress: false };
+    w.amount += it.amount;
+    const c = w.byCentre.find((x) => x.centre === it.centre);
+    if (c) c.amount += it.amount;
+    else w.byCentre.push({ centre: it.centre, amount: it.amount });
+    weeks.set(key, w);
+  }
+  for (const w of weeks.values()) {
+    w.inProgress = w.weekEnd >= today;
+    w.byCentre.sort((a, b) => b.amount - a.amount);
+  }
+  return [...weeks.values()].sort((a, b) => b.weekStart.getTime() - a.weekStart.getTime());
 }

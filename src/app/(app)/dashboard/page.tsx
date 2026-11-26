@@ -8,6 +8,7 @@ import { Kpi } from "@/components/kpi";
 import { SortableTable, type SortColumn, type SortRow } from "@/components/sortable-table";
 import { centerMetrics, reportStatus, REPORT_DUE_HOUR } from "@/lib/metrics";
 import { DailyReports } from "./daily-reports";
+import { EntryDetails } from "@/components/entry-details";
 import { BreakEvenChart, BreakEvenLegend, type BreakEvenPoint } from "./break-even-chart";
 import { DollarSign, CalendarDays, Trophy, Star, CalendarCheck, Award, Store } from "lucide-react";
 
@@ -17,6 +18,7 @@ const CENTRE_COLUMNS: SortColumn[] = [
   { key: "name", label: "Centre", kind: "text" },
   { key: "today", label: "Today", kind: "money" },
   { key: "yesterday", label: "Yesterday", kind: "money" },
+  { key: "avgPerDay", label: "Avg / day", kind: "money" },
   { key: "week", label: "This week", kind: "money" },
   { key: "last7", label: "Last 7 days", kind: "money", strong: true },
   {
@@ -26,7 +28,6 @@ const CENTRE_COLUMNS: SortColumn[] = [
     tooltip: "Last 7 days compared with the 7 days before. Hover a value for the amounts.",
     cellTitle: "trendTitle",
   },
-  { key: "avgPerDay", label: "Avg / day", kind: "money" },
   { key: "total", label: "Season total", kind: "money" },
   { key: "endsDate", label: "Booking ends", kind: "date", sub: "endsNote", subTone: "endsTone" },
 ];
@@ -50,7 +51,7 @@ export default async function DashboardPage() {
   const seasonTo = seasonEnd() < bizToday ? seasonEnd() : bizToday;
   const last30 = addDaysUTC(bizToday, -29); // 30 days including today
 
-  const [compareSales, allSales30, centers, seasonSales, weekSellerSales, salesToDate, expensesToDate, bookedCentres] = await Promise.all([
+  const [compareSales, allSales30, centers, seasonSales, weekSellerSales, salesToDate, expensesToDate, bookedCentres, todayReports, reportExpenses] = await Promise.all([
     prisma.dailySale.findMany({
       where: { date: { gte: lastWeekStart, lte: bizToday } },
       select: { date: true, cashAmount: true, cardAmount: true, refundAmount: true },
@@ -77,13 +78,33 @@ export default async function DashboardPage() {
         cashAmount: true,
         cardAmount: true,
         refundAmount: true,
-        center: { select: { name: true, bookedTo: true } },
+        center: { select: { name: true, bookedFrom: true, bookedTo: true } },
       },
     }),
     prisma.expense.findMany({ where: { datePaid: { lte: bizToday } }, select: { datePaid: true, amount: true } }),
     prisma.shoppingCenter.findMany({
       where: { status: "booked" },
       select: { id: true, name: true, bookedFrom: true, bookedTo: true, sales: { select: { date: true } } },
+    }),
+    // Today's and yesterday's reports with full details, for those columns' tooltips
+    prisma.dailySale.findMany({
+      where: { date: { in: [bizToday, bizYesterday] } },
+      select: {
+        date: true,
+        centerId: true,
+        cashAmount: true,
+        cardAmount: true,
+        refundAmount: true,
+        notes: true,
+        center: { select: { name: true } },
+        employeeSales: { select: { amount: true, employee: { select: { fullName: true } } } },
+        saleExpenses: { select: { title: true, amount: true } },
+      },
+    }),
+    // End-of-day expenses from daily reports, counted on the day they were spent
+    prisma.dailySaleExpense.findMany({
+      where: { dailySale: { date: { lte: bizToday } } },
+      select: { amount: true, dailySale: { select: { date: true } } },
     }),
   ]);
 
@@ -108,6 +129,10 @@ export default async function DashboardPage() {
   for (const s of salesToDate) salesByDay.set(isoDay(s.date), (salesByDay.get(isoDay(s.date)) ?? 0) + s.cashAmount + s.cardAmount - s.refundAmount);
   const expensesByDay = new Map<string, number>();
   for (const e of expensesToDate) expensesByDay.set(isoDay(e.datePaid), (expensesByDay.get(isoDay(e.datePaid)) ?? 0) + e.amount);
+  for (const e of reportExpenses) {
+    const d = isoDay(e.dailySale.date);
+    expensesByDay.set(d, (expensesByDay.get(d) ?? 0) + e.amount);
+  }
   let cumSales = 0;
   let cumExpenses = 0;
   for (const [d, v] of salesByDay) if (d < isoDay(seasonStart())) cumSales += v;
@@ -124,7 +149,7 @@ export default async function DashboardPage() {
     breakEven.push({ date: key, sales: cumSales, expenses: cumExpenses });
   }
 
-  // Centre status table: centres with sales this season only
+  // Centre status table: centres booked today (today within booked from–to) that have sales this season
   const sumNetOf = (rows: typeof salesToDate) => rows.reduce((t, s) => t + s.cashAmount + s.cardAmount - s.refundAmount, 0);
   const centreInfo = new Map(salesToDate.map((s) => [s.centerId, s.center]));
   const centreStats = centerMetrics(
@@ -133,7 +158,38 @@ export default async function DashboardPage() {
     seasonStart(),
     seasonEnd(),
     bizToday
-  ).filter((m) => m.days > 0);
+  ).filter((m) => {
+    const c = centreInfo.get(m.id);
+    return m.days > 0 && !!c?.bookedFrom && !!c.bookedTo && c.bookedFrom <= bizToday && bizToday <= c.bookedTo;
+  });
+
+  // Tooltips on each centre's Today and Yesterday amounts: the same report details as the Sales by day grid
+  const todayKey = bizToday.toISOString().slice(0, 10);
+  const todayTips: Record<string, Record<string, React.ReactNode>> = {};
+  for (const r of todayReports) {
+    const day = r.date.toISOString().slice(0, 10);
+    todayTips[r.centerId] = {
+      ...todayTips[r.centerId],
+      [day === todayKey ? "today" : "yesterday"]: (
+        <EntryDetails
+          centre={r.center.name}
+          date={day}
+          e={{
+            date: day,
+            centerId: r.centerId,
+            cash: r.cashAmount,
+            card: r.cardAmount,
+            refund: r.refundAmount,
+            notes: r.notes,
+            sellers: r.employeeSales
+              .map((es) => ({ name: es.employee.fullName, amount: es.amount }))
+              .sort((a, b) => b.amount - a.amount),
+            expenses: r.saleExpenses.map((x) => ({ title: x.title, amount: x.amount })),
+          }}
+        />
+      ),
+    };
+  }
   const daysLeft = (end: Date | null) => (end ? Math.round((end.getTime() - bizToday.getTime()) / DAY_MS) : null);
   const daysLeftNote = (left: number | null) =>
     left === null ? null : left > 1 ? `${left} days left` : left === 1 ? "1 day left" : left === 0 ? "Last day" : "Ended";
@@ -348,7 +404,7 @@ export default async function DashboardPage() {
               Centres right now
             </CardTitle>
             <p className="text-xs text-zinc-500">
-              Centres with sales this season. Avg / day is the season total ÷ days traded. Click a column header to
+              Centres booked today. Hover or tap today&apos;s or yesterday&apos;s amount for its details. Avg / day is the season total ÷ days traded. Click a column header to
               sort.
             </p>
           </CardHeader>
@@ -357,8 +413,9 @@ export default async function DashboardPage() {
               columns={CENTRE_COLUMNS}
               rows={centreRows}
               footer={centreFooter}
+              cellTips={todayTips}
               defaultSort={{ key: "last7", dir: "desc" }}
-              empty="No centre has sales this season yet."
+              empty="No booked centre has sales this season yet."
             />
           </CardContent>
         </Card>

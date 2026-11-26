@@ -87,6 +87,7 @@ export function SortableTable({
   defaultSort,
   empty = "Nothing to show yet.",
   footer,
+  cellTips,
 }: {
   columns: SortColumn[];
   rows: SortRow[];
@@ -94,6 +95,8 @@ export function SortableTable({
   empty?: string;
   // Pinned below the sorted rows, e.g. a Total row
   footer?: SortRow;
+  // Rich tooltip content per cell: cellTips[rowId][columnKey]
+  cellTips?: Record<string, Record<string, React.ReactNode>>;
 }) {
   const [sort, setSort] = useState(defaultSort);
 
@@ -112,7 +115,7 @@ export function SortableTable({
       s.key === c.key ? { key: c.key, dir: s.dir === "asc" ? "desc" : "asc" } : { key: c.key, dir: isNumeric(c) ? "desc" : "asc" }
     );
 
-  const renderRow = (r: SortRow, isFooter: boolean) => (
+  const renderRow = (r: SortRow, isFooter: boolean, index = 0) => (
     <TableRow key={r.id} className={cn(isFooter && "border-t-2 border-zinc-300 bg-zinc-50 hover:bg-zinc-50")}>
       {columns.map((c, i) => (
         <TableCell
@@ -125,7 +128,12 @@ export function SortableTable({
             "whitespace-nowrap"
           )}
         >
-          {c.cellTitle && r[c.cellTitle] ? (
+          {cellTips?.[r.id]?.[c.key] ? (
+            // First rows open downwards so the table's top edge doesn't cut the bubble off
+            <Tip content={cellTips[r.id][c.key]} below={index < 3} align={i === 0 ? "left" : "right"}>
+              <span className="underline decoration-zinc-300 decoration-dotted underline-offset-4">{render(c, r[c.key])}</span>
+            </Tip>
+          ) : c.cellTitle && r[c.cellTitle] ? (
             <Tip content={String(r[c.cellTitle])}>{render(c, r[c.key])}</Tip>
           ) : (
             render(c, r[c.key])
@@ -190,7 +198,7 @@ export function SortableTable({
             </TableCell>
           </TableRow>
         )}
-        {sorted.map((r) => renderRow(r, false))}
+        {sorted.map((r, i) => renderRow(r, false, i))}
         {footer && sorted.length > 0 && renderRow(footer, true)}
       </TableBody>
     </Table>

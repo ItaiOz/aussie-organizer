@@ -11,8 +11,18 @@ import { ExpenseFormDialog } from "./expense-form-dialog";
 import { DeleteExpenseButton } from "./delete-expense-button";
 import { EXPENSE_CATEGORIES } from "./categories";
 import { RankedBarChart } from "@/components/ranked-bar-chart";
+import { Tip } from "@/components/tip";
+import { SortableTable, type SortColumn } from "@/components/sortable-table";
+import { endOfDayExpenseLines } from "./end-of-day";
 
 export const dynamic = "force-dynamic";
+
+const TOTALS_COLUMNS: SortColumn[] = [
+  { key: "cat", label: "Category", kind: "text" },
+  { key: "thisMonth", label: "This month", kind: "money" },
+  { key: "lastMonth", label: "Last month", kind: "money" },
+  { key: "allTime", label: "All time", kind: "money" },
+];
 
 type ExpenseRow = {
   id: string;
@@ -22,6 +32,8 @@ type ExpenseRow = {
   paidBy: string;
   datePaid: Date;
   notes: string | null;
+  // Calculated weekly line from daily reports: read-only here
+  auto?: boolean;
 };
 
 function ExpenseTable({ rows, showCategory }: { rows: ExpenseRow[]; showCategory: boolean }) {
@@ -58,18 +70,26 @@ function ExpenseTable({ rows, showCategory }: { rows: ExpenseRow[]; showCategory
                 <TableCell className="text-right font-semibold">{money(e.amount)}</TableCell>
                 <TableCell className="text-zinc-500 text-sm">{e.notes ?? "—"}</TableCell>
                 <TableCell className="whitespace-nowrap">
-                  <ExpenseFormDialog
-                    expense={{
-                      id: e.id,
-                      title: e.title,
-                      amount: e.amount,
-                      category: e.category,
-                      paidBy: e.paidBy,
-                      datePaid: format(e.datePaid, "yyyy-MM-dd"),
-                      notes: e.notes,
-                    }}
-                  />
-                  <DeleteExpenseButton id={e.id} title={e.title} />
+                  {e.auto ? (
+                    <Tip content="Calculated every week from the expenses staff enter on their daily reports. To change it, edit the expense on that day's report.">
+                      <span className="text-xs text-zinc-400">Auto</span>
+                    </Tip>
+                  ) : (
+                    <>
+                      <ExpenseFormDialog
+                        expense={{
+                          id: e.id,
+                          title: e.title,
+                          amount: e.amount,
+                          category: e.category,
+                          paidBy: e.paidBy,
+                          datePaid: format(e.datePaid, "yyyy-MM-dd"),
+                          notes: e.notes,
+                        }}
+                      />
+                      <DeleteExpenseButton id={e.id} title={e.title} />
+                    </>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -81,12 +101,17 @@ function ExpenseTable({ rows, showCategory }: { rows: ExpenseRow[]; showCategory
 }
 
 export default async function ExpensesPage() {
-  const [expenses, salesAgg] = await Promise.all([
+  const [manualExpenses, salesAgg, endOfDay] = await Promise.all([
     prisma.expense.findMany({
       orderBy: [{ datePaid: "desc" }, { createdAt: "desc" }],
     }),
     prisma.dailySale.aggregate({ _sum: { cashAmount: true, cardAmount: true } }),
+    endOfDayExpenseLines(),
   ]);
+  // Expenses entered here plus the weekly end-of-day lines from daily reports, newest first
+  const expenses: ExpenseRow[] = [...manualExpenses, ...endOfDay].sort(
+    (a, b) => b.datePaid.getTime() - a.datePaid.getTime()
+  );
   // Gross income = all sales before refunds (cash + credit), all time
   const grossIncome = (salesAgg._sum.cashAmount ?? 0) + (salesAgg._sum.cardAmount ?? 0);
 
@@ -180,38 +205,19 @@ export default async function ExpensesPage() {
             <CardTitle>Totals by category</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="text-right">This month</TableHead>
-                  <TableHead className="text-right">Last month</TableHead>
-                  <TableHead className="text-right">All time</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {totals.map((t) => (
-                  <TableRow key={t.cat}>
-                    <TableCell className="font-medium">{t.cat}</TableCell>
-                    <TableCell className="text-right">
-                      {t.thisMonth === 0 ? <span className="text-zinc-300">—</span> : money(t.thisMonth)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {t.lastMonth === 0 ? <span className="text-zinc-300">—</span> : money(t.lastMonth)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {t.allTime === 0 ? <span className="text-zinc-300">—</span> : money(t.allTime)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                <TableRow>
-                  <TableCell className="font-semibold">Total</TableCell>
-                  <TableCell className="text-right font-semibold">{money(grand.thisMonth)}</TableCell>
-                  <TableCell className="text-right font-semibold">{money(grand.lastMonth)}</TableCell>
-                  <TableCell className="text-right font-semibold">{money(grand.allTime)}</TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
+            <SortableTable
+              columns={TOTALS_COLUMNS}
+              // 0 shows as "—" (null), like before
+              rows={totals.map((t) => ({
+                id: t.cat,
+                cat: t.cat,
+                thisMonth: t.thisMonth || null,
+                lastMonth: t.lastMonth || null,
+                allTime: t.allTime || null,
+              }))}
+              footer={{ id: "total", cat: "Total", thisMonth: grand.thisMonth, lastMonth: grand.lastMonth, allTime: grand.allTime }}
+              defaultSort={{ key: "allTime", dir: "desc" }}
+            />
           </CardContent>
         </Card>
 

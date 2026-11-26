@@ -45,6 +45,9 @@ model Employee {
   role                String   @default("employee") // employee | region_manager | owner
   payout              Float    @default(0)
   status              String   @default("active") // active | inactive
+  // Work period: first and last day they're expected to work (calendar dates, UTC midnight)
+  startDate           DateTime?
+  endDate             DateTime?
   apartmentAssignments ApartmentAssignment[]
   employeeSales       EmployeeSale[]
   payrolls            WeeklyPayroll[]

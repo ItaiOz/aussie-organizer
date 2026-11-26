@@ -72,6 +72,16 @@ export function EmployeeFormDialog() {
               <Input id="payout" name="payout" type="number" min="0" step="0.01" placeholder="0.00" />
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="startDate">Started</Label>
+              <Input id="startDate" name="startDate" type="date" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="endDate">Finished</Label>
+              <Input id="endDate" name="endDate" type="date" />
+            </div>
+          </div>
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="ghost">

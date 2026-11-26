@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import { format } from "date-fns";
 import { auth } from "../../../../../auth";
 import { prisma } from "@/lib/prisma";
+import { endOfDayExpenseLines } from "../end-of-day";
 
 export const dynamic = "force-dynamic";
 
@@ -10,9 +11,12 @@ export async function GET() {
   const role = (session?.user as { role?: string } | undefined)?.role;
   if (!session?.user || role === "staff") return new Response("Unauthorized", { status: 401 });
 
-  const expenses = await prisma.expense.findMany({
-    orderBy: [{ datePaid: "desc" }, { createdAt: "desc" }],
-  });
+  // Same rows as the Expenses page: entered expenses plus the weekly end-of-day lines
+  const [manual, endOfDay] = await Promise.all([
+    prisma.expense.findMany({ orderBy: [{ datePaid: "desc" }, { createdAt: "desc" }] }),
+    endOfDayExpenseLines(),
+  ]);
+  const expenses = [...manual, ...endOfDay].sort((a, b) => b.datePaid.getTime() - a.datePaid.getTime());
 
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Expenses", { views: [{ state: "frozen", ySplit: 1 }] });

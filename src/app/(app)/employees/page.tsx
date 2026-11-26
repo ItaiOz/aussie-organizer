@@ -26,6 +26,8 @@ const ROLE_LABEL: Record<string, string> = {
 const COLUMNS: SortColumn[] = [
   { key: "name", label: "Name", kind: "text" },
   { key: "role", label: "Role", kind: "text" },
+  { key: "startDate", label: "Started", kind: "date" },
+  { key: "endDate", label: "Finished", kind: "date" },
   { key: "today", label: "Today", kind: "money" },
   { key: "d7", label: "Sales (7d)", kind: "money" },
   { key: "d30", label: "Sales (30d)", kind: "money" },
@@ -74,7 +76,8 @@ export default async function EmployeesPage() {
   // Weekly attendance: weeks with 0–1 days worked; owners and inactive employees excluded
   const lowWeeks = lowAttendanceWeeks(
     sales.map((s) => ({ employeeId: s.employeeId, date: s.dailySale.date })),
-    today
+    today,
+    Object.fromEntries(employees.map((e) => [e.id, { start: e.startDate, end: e.endDate }]))
   );
   const lowAttendance = employees
     .filter((e) => e.role !== "owner" && e.status === "active" && lowWeeks[e.id])
@@ -95,6 +98,8 @@ export default async function EmployeesPage() {
       id: e.id,
       name: e.fullName,
       role: ROLE_LABEL[e.role] ?? e.role,
+      startDate: e.startDate ? e.startDate.toISOString().slice(0, 10) : null,
+      endDate: e.endDate ? e.endDate.toISOString().slice(0, 10) : null,
       today: m?.today || null,
       d7: m?.d7 ?? 0,
       d30: m?.d30 ?? 0,
